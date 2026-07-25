@@ -1,1 +1,151 @@
-<placeholder>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dragoons of the Fallen Star</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<!-- ============ TITLE SCREEN ============ -->
+<div id="title-screen" class="screen">
+  <div class="title-emblem"></div>
+  <h1 class="game-title">DRAGOONS<span>of the</span>FALLEN STAR</h1>
+  <p class="title-sub">A Legend of Dragoon × Diablo II hybrid</p>
+  <div id="class-select">
+    <div class="class-card" data-class="knight">
+      <div class="class-portrait knight"></div>
+      <h3>Dragoon Knight</h3>
+      <p>Master of the Addition blade. High Strength, devastating timed combos.</p>
+      <div class="class-stats"><span>STR ★★★★</span><span>VIT ★★★</span><span>ENE ★★</span></div>
+    </div>
+    <div class="class-card" data-class="rogue">
+      <div class="class-portrait rogue"></div>
+      <h3>Shadow Rogue</h3>
+      <p>Swift strikes from the dark. Critical hits and blinding attack speed.</p>
+      <div class="class-stats"><span>DEX ★★★★</span><span>STR ★★★</span><span>VIT ★★</span></div>
+    </div>
+    <div class="class-card" data-class="sorceress">
+      <div class="class-portrait sorceress"></div>
+      <h3>Storm Sorceress</h3>
+      <p>Commands fire, ice and lightning. Fragile body, annihilating magic.</p>
+      <div class="class-stats"><span>ENE ★★★★</span><span>DEX ★★</span><span>VIT ★★</span></div>
+    </div>
+  </div>
+  <button id="btn-start" class="btn-primary" disabled>SELECT YOUR HERO</button>
+  <p class="title-hint">WASD move · Mouse orbit · Space = Addition timing · C/K/I menus</p>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="hud-topleft">
+    <div id="portrait-frame"><div id="portrait-face"></div></div>
+    <div id="hud-bars">
+      <div class="bar-label" id="hud-name">Hero</div>
+      <div class="bar hp-bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="bar mp-bar"><div id="mp-fill"></div><span id="mp-text"></span></div>
+      <div class="bar xp-bar"><div id="xp-fill"></div><span id="level-text">Lv 1</span></div>
+      <div class="bar sp-bar" title="Spirit — fills in battle, unleash Dragoon form at 100%"><div id="sp-fill"></div><span>SPIRIT</span></div>
+    </div>
+  </div>
+  <div id="hotbar"></div>
+  <div id="hud-right">
+    <div id="minimap-wrap"><canvas id="minimap" width="140" height="140"></canvas></div>
+    <div id="gold-display">◈ <span id="gold-amt">0</span></div>
+  </div>
+  <div id="hud-hint">C Character · K Skills · I Inventory · E Pick up · Esc Menu</div>
+</div>
+
+<!-- ============ DAMAGE / LOOT FLOATERS ============ -->
+<div id="floaters"></div>
+
+<!-- ============ BATTLE UI ============ -->
+<div id="battle-ui" class="hidden">
+  <div id="battle-banner"></div>
+  <div id="turn-indicator"></div>
+  <div id="addition-ring" class="hidden">
+    <div id="ring-outer"></div>
+    <div id="ring-shrink"></div>
+    <div id="ring-judge"></div>
+  </div>
+  <div id="combo-counter" class="hidden"></div>
+  <div id="battle-menu" class="hidden">
+    <button class="battle-btn" data-action="attack">⚔ Attack <small>Addition combo</small></button>
+    <button class="battle-btn" data-action="skills">✦ Skills <small>MP cost</small></button>
+    <button class="battle-btn" data-action="items">✚ Items <small>potions</small></button>
+    <button class="battle-btn" data-action="dragoon" id="btn-dragoon">🐉 Dragoon <small id="dragoon-req">needs 100% spirit</small></button>
+    <button class="battle-btn" data-action="defend">🛡 Defend <small>half damage, +spirit</small></button>
+  </div>
+  <div id="battle-submenu" class="hidden"></div>
+  <div id="battle-log"></div>
+</div>
+
+<!-- ============ RESULTS ============ -->
+<div id="results-screen" class="screen hidden">
+  <h2 id="results-title">VICTORY</h2>
+  <div id="results-body"></div>
+  <button id="btn-results-ok" class="btn-primary">CONTINUE</button>
+</div>
+
+<!-- ============ CHARACTER SHEET ============ -->
+<div id="char-sheet" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2>CHARACTER <span class="modal-close" data-close="char-sheet">✕</span></h2>
+    <div class="sheet-cols">
+      <div id="attr-panel">
+        <h3>Attributes <span id="attr-points"></span></h3>
+        <div class="attr-row" data-attr="str"><span class="attr-name">Strength</span><span class="attr-val" id="attr-str">10</span><button class="attr-plus" data-attr="str">+</button><small>physical damage</small></div>
+        <div class="attr-row" data-attr="dex"><span class="attr-name">Dexterity</span><span class="attr-val" id="attr-dex">10</span><button class="attr-plus" data-attr="dex">+</button><small>crit & hit speed</small></div>
+        <div class="attr-row" data-attr="vit"><span class="attr-name">Vitality</span><span class="attr-val" id="attr-vit">10</span><button class="attr-plus" data-attr="vit">+</button><small>health & defense</small></div>
+        <div class="attr-row" data-attr="ene"><span class="attr-name">Energy</span><span class="attr-val" id="attr-ene">10</span><button class="attr-plus" data-attr="ene">+</button><small>mana & skill power</small></div>
+      </div>
+      <div id="derived-panel">
+        <h3>Derived Stats</h3>
+        <div id="derived-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SKILL TREE ============ -->
+<div id="skill-tree" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2>SKILL TREE <span id="skill-points"></span> <span class="modal-close" data-close="skill-tree">✕</span></h2>
+    <div id="tree-branches"></div>
+    <div id="skill-tooltip" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ============ INVENTORY ============ -->
+<div id="inventory" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2>INVENTORY & EQUIPMENT <span class="modal-close" data-close="inventory">✕</span></h2>
+    <div class="inv-cols">
+      <div id="equip-panel"><h3>Equipped</h3><div id="equip-slots"></div></div>
+      <div id="inv-panel"><h3>Backpack <span id="inv-count"></span></h3><div id="inv-grid"></div></div>
+    </div>
+    <div id="item-tooltip" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ============ PAUSE ============ -->
+<div id="pause-menu" class="screen hidden">
+  <h2>PAUSED</h2>
+  <button class="btn-primary" id="btn-resume">RESUME</button>
+  <button class="btn-secondary" id="btn-save">SAVE GAME</button>
+  <button class="btn-secondary" id="btn-quit">QUIT TO TITLE</button>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script src="js/three.min.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/rpg.js"></script>
+<script src="js/game.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
