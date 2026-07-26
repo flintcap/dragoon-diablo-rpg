@@ -1,24 +1,78 @@
-/* game.js — overworld engine: scene, player, enemies, camera, loot, minimap */
+/* game.js — overworld engine: zones, player, enemies, elites, camera, loot, minimap, portals */
 const World = (() => {
   let renderer, scene, camera, player3d, clock;
-  let enemies = [], lootDrops = [], props = [], fireflies;
+  let enemies = [], lootDrops = [], props = [], particles = null, portals = [], interactables = []; let grottoBossSpawnedFlag = false;
   let keys = {}, mouseDown = false, camYaw = 0.6, camPitch = 0.62;
   const CAM_DIST = 12;
-  const WORLD_R = 70; // playable radius
-  let animT = 0, onEncounter = null, bossSpawned = false;
+  const WORLD_R = 70;
+  let animT = 0, onEncounter = null, bossSpawned = false, grottoBossSpawned = false;
+  let currentZone = 'forest';
 
   const M = THREE;
+  const rnd = (a,b)=>a+Math.random()*(b-a);
+  const rndi = (a,b)=>Math.floor(rnd(a,b+1));
+  function randInCircle(r){ const a=rnd(0,Math.PI*2), d=Math.sqrt(Math.random())*r; return {x:Math.cos(a)*d, z:Math.sin(a)*d}; }
   function mat(color, rough=0.85, metal=0.05, emissive=0x000000, eInt=0) {
     return new M.MeshStandardMaterial({ color, roughness: rough, metalness: metal,
       emissive, emissiveIntensity: eInt });
   }
-  function fadeMat(color, rough=0.95) {
-    const m = mat(color, rough);
-    m.transparent = true;
-    return m;
-  }
+  function fadeMat(color, rough=0.95) { const m = mat(color, rough); m.transparent = true; return m; }
 
-  // ---------- SCENE ----------
+  // ---------- ZONE DEFINITIONS ----------
+  const ZONES = {
+    forest: {
+      name: 'Whisperwood',
+      bg: 0x060a14, fog: [0x070d1a, 0.013], ground: 0x0e1a12,
+      ambient: [0x1c2742, 0.55], hemi: [0x2a3a5c, 0x080f0a, 0.28],
+      moon: [0x9db8ff, 1.1], rim: [0xff9a5c, 0.35],
+      sky: true, trees: 110, treePalette: 0x12261a, rocks: 40, crystals: 14,
+      ruins: true, fireflies: [0xaaffcc, 220],
+      enemies: [
+        { name:'Gloom Wolf',    color:0x4a5568, hp:40,  dmg:8,  xp:30,  gold:12, scale:.9, speed:2.2 },
+        { name:'Cursed Husk',   color:0x5a4a3a, hp:55,  dmg:11, xp:42,  gold:16, scale:1.0, speed:1.4 },
+        { name:'Void Sprite',   color:0x7a3aa0, hp:35,  dmg:14, xp:50,  gold:22, scale:.8, speed:2.8 },
+        { name:'Fallen Knight', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
+      ],
+      enemyCount: 14, levelMod: 0,
+    },
+    grotto: {
+      name: 'The Sunken Grotto',
+      bg: 0x05060e, fog: [0x0a0a18, 0.016], ground: 0x0b0d16,
+      ambient: [0x241c42, 0.6], hemi: [0x3a2a5c, 0x05060a, 0.3],
+      moon: [0x8a7aff, 0.6], rim: [0x3ad5c8, 0.4],
+      sky: false, trees: 0, treePalette: 0, rocks: 25, crystals: 46,
+      ruins: false, fireflies: [0x8a7aff, 160],
+      enemies: [
+        { name:'Cave Lurker',   color:0x3a4a5a, hp:70,  dmg:15, xp:70,  gold:26, scale:1.0, speed:2.4 },
+        { name:'Crystal Golem', color:0x5a8a9e, hp:120, dmg:18, xp:110, gold:40, scale:1.3, speed:1.2 },
+        { name:'Drowned Wraith',color:0x4a3a6a, hp:60,  dmg:22, xp:95,  gold:38, scale:.95, speed:2.9 },
+        { name:'Gem Eater',     color:0x9e5a3a, hp:90,  dmg:17, xp:85,  gold:46, scale:1.05, speed:1.8 },
+      ],
+      enemyCount: 12, levelMod: 3,
+    },
+    crater: {
+      name: 'The Star Crater',
+      bg: 0x0c0505, fog: [0x140808, 0.018], ground: 0x140e0c,
+      ambient: [0x421c1c, 0.6], hemi: [0x5c2a1a, 0x0a0505, 0.3],
+      moon: [0xff7a5c, 0.65], rim: [0xffb45c, 0.45],
+      sky: false, trees: 0, treePalette: 0, rocks: 30, crystals: 20,
+      ruins: false, fireflies: [0xff9a4d, 240],
+      enemies: [
+        { name:'Ash Revenant',  color:0x4a2a2a, hp:110, dmg:24, xp:130, gold:50, scale:1.05, speed:2.0 },
+        { name:'Star Spawn',    color:0x6a3a5a, hp:85,  dmg:28, xp:150, gold:60, scale:.9, speed:3.0 },
+        { name:'Magma Husk',    color:0x7a3a1a, hp:160, dmg:26, xp:170, gold:65, scale:1.35, speed:1.3 },
+        { name:'Ember Fiend',   color:0xa03818, hp:95,  dmg:30, xp:160, gold:70, scale:1.0, speed:2.6 },
+      ],
+      enemyCount: 12, levelMod: 6,
+    },
+  };
+  const BOSS = { name:'Melbu\'s Herald', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true, bossId:'herald', shielded:true };
+  const GROTTO_BOSS = { name:'Tyrant of the Deep', color:0x1a3a4a, hp:700, dmg:30, xp:1200, gold:900, scale:2.1, speed:1.6, boss:true, bossId:'tyrant', enrage:{ at:.3, dmgMult:1.5 } };
+  const CRATER_BOSS = { name:'MELBU FRAHMA', color:0x33111a, hp:1100, dmg:36, xp:3000, gold:2000, scale:2.4, speed:1.8, boss:true, bossId:'melbu',
+    phase2: { name:'🐉 MELBU FRAHMA — DRAGON AVATAR 🐉', dmgMult:1.4, healPct:.15, color:0x8a1420 } };
+  const ELITE_PREFIX = ['Cursed', 'Ancient', 'Void-Touched', 'Bloodbound'];
+
+  // ---------- INIT ----------
   function init(canvas) {
     renderer = new M.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -28,63 +82,88 @@ const World = (() => {
     renderer.outputEncoding = M.sRGBEncoding;
     renderer.toneMapping = M.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
-    scene = new M.Scene();
-    scene.background = new M.Color(0x060a14);
-    scene.fog = new M.FogExp2(0x070d1a, 0.013);
     camera = new M.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
     clock = new M.Clock();
+    player3d = buildCharacter(0xff8833);
+    buildZone('forest', true);
+    addEventListeners();
+  }
 
-    // lighting: moon key + warm rim + ambient
-    const moon = new M.DirectionalLight(0x9db8ff, 1.1);
+  // ---------- ZONE CONSTRUCTION ----------
+  function buildZone(zoneId, first=false) {
+    const Z = ZONES[zoneId];
+    currentZone = zoneId;
+    scene = new M.Scene();
+    scene.background = new M.Color(Z.bg);
+    scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1]);
+    enemies = []; lootDrops = []; props = []; portals = []; interactables = [];
+
+    const moon = new M.DirectionalLight(Z.moon[0], Z.moon[1]);
     moon.position.set(-30, 50, 20); moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
     moon.shadow.camera.left = -60; moon.shadow.camera.right = 60;
     moon.shadow.camera.top = 60; moon.shadow.camera.bottom = -60;
     moon.shadow.camera.far = 150; moon.shadow.bias = -0.0004;
     scene.add(moon);
-    const rim = new M.DirectionalLight(0xff9a5c, 0.35); rim.position.set(40, 20, -40); scene.add(rim);
-    scene.add(new M.AmbientLight(0x1c2742, 0.55));
-    const hemi = new M.HemisphereLight(0x2a3a5c, 0x080f0a, 0.28); scene.add(hemi);
+    const rim = new M.DirectionalLight(Z.rim[0], Z.rim[1]); rim.position.set(40, 20, -40); scene.add(rim);
+    scene.add(new M.AmbientLight(Z.ambient[0], Z.ambient[1]));
+    scene.add(new M.HemisphereLight(Z.hemi[0], Z.hemi[1], Z.hemi[2]));
 
-    buildGround(); buildSky(); buildForest(); buildRuins(); buildFireflies();
-    player3d = buildCharacter(0xff8833); scene.add(player3d.group);
-    spawnEnemies();
-    addEventListeners();
+    buildGround(Z);
+    if (Z.sky) buildSky();
+    if (Z.trees) buildForest(Z);
+    if (zoneId === 'grotto') buildGrotto(Z);
+    if (zoneId === 'crater') buildCrater(Z);
+    if (Z.ruins) buildRuins();
+    buildRocksAndCrystals(Z);
+    buildParticles(Z);
+    buildPortal(zoneId);
+    scene.add(player3d.group);
+    player3d.group.position.set(zoneId === 'forest' ? 20 : 24, 0, zoneId === 'forest' ? 20 : 24);
+    spawnEnemies(Z);
   }
 
-  function buildGround() {
+  function buildGround(Z) {
     const geo = new M.CircleGeometry(WORLD_R + 30, 64);
-    const g = mat(0x0e1a12, 1, 0); const ground = new M.Mesh(geo, g);
+    const ground = new M.Mesh(geo, mat(Z.ground, 1, 0));
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
-    // mottled detail patches
     for (let i=0;i<90;i++){
       const r = rnd(1.5, 5), p = randInCircle(WORLD_R+20);
       const patch = new M.Mesh(new M.CircleGeometry(r, 12),
-        mat(new M.Color(0x0e1a12).offsetHSL(0, rnd(-0.02,0.02), rnd(-0.015,0.02)).getHex(), 1, 0));
+        mat(new M.Color(Z.ground).offsetHSL(0, rnd(-0.02,0.02), rnd(-0.015,0.02)).getHex(), 1, 0));
       patch.rotation.x = -Math.PI/2; patch.position.set(p.x, 0.01 + Math.random()*0.02, p.z);
       patch.receiveShadow = true; scene.add(patch);
     }
-    // stone path to center
-    for (let d=8; d<WORLD_R; d+=2.4){
-      const a = Math.PI/4;
-      const stone = new M.Mesh(new M.CylinderGeometry(rnd(.4,.6), rnd(.5,.7), .1, 6),
-        mat(0x1f2531, .95, .02));
-      stone.position.set(Math.cos(a)*d + rnd(-.4,.4), .05, Math.sin(a)*d + rnd(-.4,.4));
-      stone.receiveShadow = true; scene.add(stone);
+    if (currentZone === 'forest') {
+      for (let d=8; d<WORLD_R; d+=2.4){
+        const a = Math.PI/4;
+        const stone = new M.Mesh(new M.CylinderGeometry(rnd(.4,.6), rnd(.5,.7), .1, 6), mat(0x1f2531, .95, .02));
+        stone.position.set(Math.cos(a)*d + rnd(-.4,.4), .05, Math.sin(a)*d + rnd(-.4,.4));
+        stone.receiveShadow = true; scene.add(stone);
+      }
+    } else {
+      // glowing pools: teal water in grotto, lava in crater
+      const lava = currentZone === 'crater';
+      for (let i=0;i<14;i++){
+        const p = randInCircle(WORLD_R-8);
+        const pool = new M.Mesh(new M.CircleGeometry(rnd(1.5,3.5), 16),
+          new M.MeshStandardMaterial(lava
+            ? { color:0x3a0f05, emissive:0xcc3300, emissiveIntensity:.9, roughness:.3, metalness:.4 }
+            : { color:0x062030, emissive:0x083a55, emissiveIntensity:.32, roughness:.2, metalness:.6 }));
+        pool.rotation.x = -Math.PI/2; pool.position.set(p.x, .03, p.z); scene.add(pool);
+        if (lava) { const pl = new M.PointLight(0xcc4400, .8, 10); pl.position.set(p.x, 1, p.z); scene.add(pl); }
+      }
     }
   }
 
   function buildSky() {
-    // stars
     const starGeo = new M.BufferGeometry(); const pts = [];
     for (let i=0;i<800;i++){
       const a = rnd(0,Math.PI*2), e = rnd(0.05, Math.PI/2), r = 300;
       pts.push(Math.cos(a)*Math.cos(e)*r, Math.sin(e)*r, Math.sin(a)*Math.cos(e)*r);
     }
     starGeo.setAttribute('position', new M.Float32BufferAttribute(pts, 3));
-    const stars = new M.Points(starGeo, new M.PointsMaterial({ color:0xcfe0ff, size:1.4, sizeAttenuation:false }));
-    scene.add(stars);
-    // fallen star glow on horizon
+    scene.add(new M.Points(starGeo, new M.PointsMaterial({ color:0xcfe0ff, size:1.4, sizeAttenuation:false })));
     const glow = new M.Mesh(new M.SphereGeometry(10, 16, 16),
       new M.MeshBasicMaterial({ color:0x7ec8ff, transparent:true, opacity:.85 }));
     glow.position.set(140, 26, -190); scene.add(glow);
@@ -94,7 +173,7 @@ const World = (() => {
     scene.userData.skyGlow = glow;
   }
 
-  function buildTree(x, z, s=1) {
+  function buildTree(x, z, s, palette) {
     const g = new M.Group(); const mats = [];
     const trunk = new M.Mesh(new M.CylinderGeometry(.35*s, .55*s, 3.4*s, 7), fadeMat(0x241a10));
     mats.push(trunk.material);
@@ -102,7 +181,7 @@ const World = (() => {
     const layers = [[2.6, 3.2, 3.4], [2.0, 2.6, 5.2], [1.3, 2.0, 6.8]];
     for (const [r, h, y] of layers) {
       const c = new M.Mesh(new M.ConeGeometry(r*s, h*s, 8),
-        fadeMat(new M.Color(0x12261a).offsetHSL(0, rnd(-.03,.03), rnd(-.015,.02)).getHex()));
+        fadeMat(new M.Color(palette).offsetHSL(0, rnd(-.03,.03), rnd(-.015,.02)).getHex()));
       mats.push(c.material);
       c.position.y = y*s; c.castShadow = true; g.add(c);
     }
@@ -110,61 +189,158 @@ const World = (() => {
     props.push({ x, z, r: 1*s, mats });
   }
 
-  function buildForest() {
-    for (let i=0;i<110;i++){
+  function buildForest(Z) {
+    for (let i=0;i<Z.trees;i++){
       const p = randInCircle(WORLD_R+8);
-      if (Math.hypot(p.x, p.z) < 12) continue;              // clear center
-      if (Math.hypot(p.x-20, p.z-20) < 11) continue;        // clear spawn
-      if (Math.abs(p.x - p.z) < 3 && p.x > 0) continue;      // keep path clear
-      buildTree(p.x, p.z, rnd(.8, 1.7));
+      if (Math.hypot(p.x, p.z) < 12) continue;
+      if (Math.hypot(p.x-20, p.z-20) < 11) continue;
+      if (Math.abs(p.x - p.z) < 3 && p.x > 0) continue;
+      buildTree(p.x, p.z, rnd(.8, 1.7), Z.treePalette);
     }
-    // rocks
-    for (let i=0;i<40;i++){
+  }
+
+  function buildGrotto(Z) {
+    // stalagmites & stalactites
+    for (let i=0;i<60;i++){
+      const p = randInCircle(WORLD_R+10);
+      if (Math.hypot(p.x, p.z) < 10) continue;
+      const h = rnd(1.5, 6), up = Math.random() < .7;
+      const c = new M.Mesh(new M.ConeGeometry(rnd(.4,1.1), h, 6),
+        mat(new M.Color(0x1a2030).offsetHSL(0, 0, rnd(-.02,.03)).getHex(), .9, .05));
+      if (up) { c.position.set(p.x, h/2, p.z); props.push({ x:p.x, z:p.z, r:.8 }); }
+      else { c.rotation.x = Math.PI; c.position.set(p.x, 14 + h/2, p.z); }
+      c.castShadow = true; scene.add(c);
+    }
+    // landmark crystal clusters (first two fixed: spawn approach + tyrant lair)
+    const clusterSpots = [{x:16,z:16},{x:0,z:-26}];
+    for (let cl=0; cl<7; cl++){
+      const c0 = cl < 2 ? clusterSpots[cl] : randInCircle(WORLD_R-10);
+      if (cl >= 2 && Math.hypot(c0.x, c0.z) < 12) { cl--; continue; }
+      for (let i=0;i<4;i++){
+        const s = rnd(.7, 1.5);
+        const cry = new M.Mesh(new M.OctahedronGeometry(s, 0),
+          mat(0x8a6aff, .15, .15, 0x5533cc, 1.5));
+        cry.position.set(c0.x + rnd(-2.2,2.2), s*.8, c0.z + rnd(-2.2,2.2));
+        cry.rotation.set(rnd(-.3,.3), rnd(0,3), rnd(-.3,.3));
+        scene.add(cry);
+      }
+      const cl1 = new M.PointLight(0x6644dd, 1.6, 16); cl1.position.set(c0.x, 2.5, c0.z); scene.add(cl1);
+      props.push({ x:c0.x, z:c0.z, r:2.2 });
+    }
+    // bioluminescent cave growth
+    for (let i=0;i<50;i++){
+      const p = randInCircle(WORLD_R);
+      const col = Math.random()<.5 ? 0x3ad5c8 : 0x8a6aff;
+      const sh = new M.Mesh(new M.ConeGeometry(rnd(.1,.22), rnd(.25,.5), 5),
+        mat(col, .4, 0, col, 1.3));
+      sh.position.set(p.x, .2, p.z); scene.add(sh);
+    }
+    // cave ceiling disc (dark canopy high above)
+    const ceil = new M.Mesh(new M.CircleGeometry(WORLD_R + 30, 32),
+      new M.MeshBasicMaterial({ color: 0x03040a, side: M.DoubleSide }));
+    ceil.rotation.x = Math.PI/2; ceil.position.y = 22; scene.add(ceil);
+  }
+
+  function buildCrater(Z) {
+    // obsidian spikes
+    for (let i=0;i<50;i++){
+      const p = randInCircle(WORLD_R+10);
+      if (Math.hypot(p.x, p.z) < 10) continue;
+      const h = rnd(2, 8);
+      const c = new M.Mesh(new M.ConeGeometry(rnd(.4,1.2), h, 5),
+        mat(new M.Color(0x120c10).offsetHSL(0, 0, rnd(-.01,.03)).getHex(), .55, .3));
+      c.position.set(p.x, h/2, p.z); c.castShadow = true; scene.add(c);
+      props.push({ x:p.x, z:p.z, r:.8 });
+    }
+    // crater bowl at center
+    const bowl = new M.Mesh(new M.CylinderGeometry(9, 5, 2.5, 24, 1, true),
+      new M.MeshStandardMaterial({ color:0x1a0f0c, roughness:.95, side:M.DoubleSide }));
+    bowl.position.y = -1; scene.add(bowl);
+    // the Fallen Star itself — pulsing meteor core
+    const star = new M.Mesh(new M.DodecahedronGeometry(2.2, 0),
+      mat(0x3a1a10, .3, .6, 0xff4400, 1.8));
+    star.position.set(0, 2.5, 0); scene.add(star);
+    const sl = new M.PointLight(0xff5500, 2.2, 30); sl.position.set(0, 4, 0); scene.add(sl);
+    scene.userData.spiritStone = star;
+  }
+
+  function buildRocksAndCrystals(Z) {
+    for (let i=0;i<Z.rocks;i++){
       const p = randInCircle(WORLD_R+10);
       const rock = new M.Mesh(new M.DodecahedronGeometry(rnd(.5,1.6), 0), mat(0x2e3440, .9, .08));
       rock.position.set(p.x, rnd(.2,.6), p.z); rock.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3));
       rock.castShadow = rock.receiveShadow = true; scene.add(rock);
       props.push({ x:p.x, z:p.z, r:1 });
     }
-    // glowing spirit crystals
-    for (let i=0;i<14;i++){
+    const crystalCol = currentZone === 'grotto' ? [0x8a6aff, 0x5533cc]
+      : currentZone === 'crater' ? [0xff6a3a, 0xcc3300] : [0x66ccff, 0x2288cc];
+    for (let i=0;i<Z.crystals;i++){
       const p = randInCircle(WORLD_R);
-      const c = new M.Mesh(new M.OctahedronGeometry(rnd(.4,.8), 0),
-        mat(0x66ccff, .2, .1, 0x2288cc, 1.6));
+      const s = currentZone === 'grotto' ? rnd(.45,.9) : currentZone === 'crater' ? rnd(.5,1) : rnd(.4,.8);
+      const c = new M.Mesh(new M.OctahedronGeometry(s, 0),
+        mat(crystalCol[0], .2, .1, crystalCol[1], currentZone === 'forest' ? 1.6 : 1.05));
       c.position.set(p.x, rnd(.8,1.4), p.z); scene.add(c);
-      const light = new M.PointLight(0x3a9bd5, .7, 9); light.position.copy(c.position); scene.add(light);
+      const light = new M.PointLight(crystalCol[1], .7, 9); light.position.copy(c.position); scene.add(light);
       props.push({ x:p.x, z:p.z, r:.7, crystal:c });
     }
   }
 
   function buildRuins() {
-    // central ruined shrine — boss arena
     const ring = new M.Mesh(new M.CylinderGeometry(7.5, 8, .5, 24), mat(0x232835, .9, .05));
     ring.position.y = .25; ring.receiveShadow = true; scene.add(ring);
     for (let i=0;i<8;i++){
       const a = i/8*Math.PI*2;
-      const h = i%2===0 ? rnd(4,5.5) : rnd(1.5,2.5); // some broken pillars
+      const h = i%2===0 ? rnd(4,5.5) : rnd(1.5,2.5);
       const pil = new M.Mesh(new M.CylinderGeometry(.6,.7,h,8), mat(0x2c3242, .85, .06));
       pil.position.set(Math.cos(a)*6.4, h/2+.5, Math.sin(a)*6.4);
       pil.castShadow = true; scene.add(pil);
       props.push({ x:Math.cos(a)*6.4, z:Math.sin(a)*6.4, r:.9 });
     }
-    // floating dragoon spirit stone at center
-    const stone = new M.Mesh(new M.OctahedronGeometry(1.1, 0),
-      mat(0xff5533, .15, .2, 0xcc2200, 2.2));
+    const stone = new M.Mesh(new M.OctahedronGeometry(1.1, 0), mat(0xff5533, .15, .2, 0xcc2200, 2.2));
     stone.position.set(0, 4.2, 0); scene.add(stone);
     const l = new M.PointLight(0xff6633, 1.4, 22); l.position.set(0,5,0); scene.add(l);
     scene.userData.spiritStone = stone;
   }
 
-  function buildFireflies() {
-    const geo = new M.BufferGeometry(); const n = 220; const pts = new Float32Array(n*3);
+  function buildParticles(Z) {
+    const geo = new M.BufferGeometry(); const n = Z.fireflies[1]; const pts = new Float32Array(n*3);
     for (let i=0;i<n;i++){ const p = randInCircle(WORLD_R+10);
       pts[i*3]=p.x; pts[i*3+1]=rnd(.5,7); pts[i*3+2]=p.z; }
     geo.setAttribute('position', new M.BufferAttribute(pts, 3));
-    fireflies = new M.Points(geo, new M.PointsMaterial({ color:0xaaffcc, size:.16,
+    particles = new M.Points(geo, new M.PointsMaterial({ color:Z.fireflies[0], size:.16,
       transparent:true, opacity:.85, blending:M.AdditiveBlending, depthWrite:false }));
-    scene.add(fireflies);
+    scene.add(particles);
+  }
+
+  const PORTAL_DEFS = {
+    forest: [ { x:-45, z:-45, col:0x8a6aff, to:'grotto', label:'Sunken Grotto',
+                lockCheck: () => !(RPG.player.flags && RPG.player.flags.heraldDead) } ],
+    grotto: [ { x: 30, z: 30, col:0x3ad5c8, to:'forest', label:'Whisperwood', lockCheck: null },
+              { x:-42, z:-42, col:0xff5533, to:'crater', label:'Star Crater',
+                lockCheck: () => !(RPG.player.flags && RPG.player.flags.starKey) } ],
+    crater: [ { x: 30, z: 30, col:0x8a6aff, to:'grotto', label:'Sunken Grotto', lockCheck: null } ],
+  };
+  function buildOnePortal(cfg) {
+    const g = new M.Group();
+    // stone arch
+    for (const side of [-1,1]) {
+      const post = new M.Mesh(new M.CylinderGeometry(.4,.5,4.4,7), mat(0x2a3040, .9));
+      post.position.set(side*1.6, 2.2, 0); post.castShadow = true; g.add(post);
+    }
+    const lintel = new M.Mesh(new M.BoxGeometry(4, .7, .9), mat(0x2a3040, .9));
+    lintel.position.y = 4.6; g.add(lintel);
+    // swirling portal membrane
+    const mem = new M.Mesh(new M.CircleGeometry(1.35, 24),
+      new M.MeshBasicMaterial({ color: cfg.col, transparent:true, opacity:.75, side:M.DoubleSide }));
+    mem.position.y = 2.2; g.add(mem);
+    const pl = new M.PointLight(cfg.col, 1.4, 12); pl.position.y = 2.5; g.add(pl);
+    g.position.set(cfg.x, 0, cfg.z);
+    g.rotation.y = Math.atan2(-cfg.x, -cfg.z); // face world center
+    scene.add(g);
+    portals.push({ group:g, mem, ...cfg });
+  }
+  function buildPortal(zoneId) {
+    for (const cfg of PORTAL_DEFS[zoneId] || []) buildOnePortal(cfg);
   }
 
   // ---------- CHARACTERS ----------
@@ -173,19 +349,16 @@ const World = (() => {
     const c = mat(color, .6, .25);
     const torso = new M.Mesh(new M.CylinderGeometry(.34*scale, .42*scale, .9*scale, 8), c);
     torso.position.y = 1.05*scale; torso.castShadow = true; body.add(torso);
-    const head = new M.Mesh(new M.SphereGeometry(.28*scale, 12, 10), mat(0xe8c39a, .7));
+    const head = new M.Mesh(new M.SphereGeometry(.28*scale, 12, 10), mat(isEnemy?color:0xe8c39a, .7));
     head.position.y = 1.85*scale; head.castShadow = true; body.add(head);
     const helm = new M.Mesh(new M.ConeGeometry(.3*scale, .5*scale, 8), c);
     helm.position.y = 2.12*scale; body.add(helm);
-    // arms
     const armGeo = new M.CylinderGeometry(.09*scale, .08*scale, .7*scale, 6);
     const armL = new M.Mesh(armGeo, c); armL.position.set(-.5*scale, 1.15*scale, 0); armL.rotation.z = .25; body.add(armL);
     const armR = new M.Mesh(armGeo, c); armR.position.set(.5*scale, 1.15*scale, 0); armR.rotation.z = -.25; body.add(armR);
-    // legs
     const legGeo = new M.CylinderGeometry(.11*scale, .09*scale, .65*scale, 6);
     const legL = new M.Mesh(legGeo, mat(0x2a2f3a, .9)); legL.position.set(-.18*scale, .35*scale, 0); body.add(legL);
     const legR = new M.Mesh(legGeo, mat(0x2a2f3a, .9)); legR.position.set(.18*scale, .35*scale, 0); body.add(legR);
-    // weapon
     const sword = new M.Group();
     const blade = new M.Mesh(new M.BoxGeometry(.07*scale, .9*scale, .16*scale),
       mat(0xcfd8e8, .3, .9, isEnemy?0x000000:0x8899ff, isEnemy?0:.25));
@@ -193,44 +366,66 @@ const World = (() => {
     const guard = new M.Mesh(new M.BoxGeometry(.3*scale, .07*scale, .2*scale), mat(0xd4af37, .4, .8));
     sword.add(guard);
     sword.position.set(.6*scale, 1.15*scale, 0); sword.rotation.z = -.4; body.add(sword);
+    if (isEnemy) {
+      for (const side of [-1,1]) {
+        const eye = new M.Mesh(new M.SphereGeometry(.05*scale,6,6), new M.MeshBasicMaterial({ color:0xff2222 }));
+        eye.position.set(side*.1*scale, 1.9*scale, .24*scale); body.add(eye);
+      }
+    }
     g.add(body);
     return { group: g, body, armL, armR, legL, legR, sword, head };
   }
 
-  const ENEMY_TYPES = [
-    { name:'Gloom Wolf',    color:0x4a5568, hp:40,  dmg:8,  xp:30,  gold:12, scale:.9, speed:2.2 },
-    { name:'Cursed Husk',   color:0x5a4a3a, hp:55,  dmg:11, xp:42,  gold:16, scale:1.0, speed:1.4 },
-    { name:'Void Sprite',   color:0x7a3aa0, hp:35,  dmg:14, xp:50,  gold:22, scale:.8, speed:2.8 },
-    { name:'Fallen Knight', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
-  ];
-  const BOSS = { name:'Melbu\'s Shadow', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true };
-
-  function spawnEnemies() {
-    const lvl = RPG.player ? RPG.player.level : 1;
-    for (let i=0;i<14;i++){
-      const t = ENEMY_TYPES[Math.min(ENEMY_TYPES.length-1, Math.floor(rnd(0, ENEMY_TYPES.length)))];
+  // ---------- ENEMIES ----------
+  function spawnEnemies(Z) {
+    const lvl = (RPG.player ? RPG.player.level : 1) + Z.levelMod;
+    for (let i=0;i<Z.enemyCount;i++){
+      const t = Z.enemies[rndi(0, Z.enemies.length-1)];
       const p = randInCircle(WORLD_R-6);
-      if (Math.hypot(p.x,p.z) < 16 || Math.hypot(p.x-20,p.z-20) < 12) { i--; continue; }
-      addEnemy(t, p.x, p.z, lvl);
+      if (Math.hypot(p.x,p.z) < 16 || Math.hypot(p.x-20,p.z-20) < 12 || Math.hypot(p.x-24,p.z-24) < 12) { i--; continue; }
+      addEnemy(t, p.x, p.z, lvl, Math.random() < .16); // 16% elite
     }
   }
-  function addEnemy(t, x, z, lvl) {
-    const scale = t.scale * (t.boss?1:rnd(.9,1.1));
+  function addEnemy(t, x, z, lvl, elite=false) {
+    const scale = t.scale * (elite ? 1.35 : rnd(.9,1.1));
     const c3d = buildCharacter(t.color, true, scale);
     c3d.group.position.set(x, 0, z); scene.add(c3d.group);
-    // boss aura
+    if (elite) {
+      const aura = new M.PointLight(0xffcc44, 1.1, 9); aura.position.y = 2; c3d.group.add(aura);
+      const ringM = new M.Mesh(new M.TorusGeometry(.9*scale, .06, 6, 24),
+        new M.MeshBasicMaterial({ color: 0xffcc44, transparent:true, opacity:.7 }));
+      ringM.rotation.x = Math.PI/2; ringM.position.y = .15; c3d.group.add(ringM);
+    }
     if (t.boss) {
       const aura = new M.PointLight(0x8833ff, 1.5, 15); aura.position.y = 2; c3d.group.add(aura);
     }
-    const mult = 1 + (lvl-1)*.28;
-    enemies.push({ ...t, c3d, hp: Math.round(t.hp*mult), maxHp: Math.round(t.hp*mult),
-      dmg: Math.round(t.dmg*(1+(lvl-1)*.18)), xp: Math.round(t.xp*mult),
+    const mult = (1 + (lvl-1)*.28) * (elite ? 2.2 : 1);
+    enemies.push({ ...t,
+      name: elite ? pick(ELITE_PREFIX) + ' ' + t.name : t.name,
+      elite, c3d, hp: Math.round(t.hp*mult), maxHp: Math.round(t.hp*mult),
+      dmg: Math.round(t.dmg*(1+(lvl-1)*.18)*(elite?1.5:1)),
+      xp: Math.round(t.xp*mult*(elite?1.2:1)), gold: Math.round(t.gold*(elite?2:1)),
       wanderA: rnd(0,6), wanderT: 0, dead: false });
   }
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+
   function spawnBoss() {
     if (bossSpawned) return; bossSpawned = true;
     addEnemy(BOSS, 0, -10, RPG.player.level + 2);
     toast('⚠ A terrible presence stirs at the ruined shrine…', 'var(--blood)');
+    AudioSys.play('encounter');
+  }
+  function spawnGrottoBoss() {
+    if (grottoBossSpawned) return; grottoBossSpawned = true;
+    addEnemy(GROTTO_BOSS, 0, -30, RPG.player.level + 4, false);
+    toast('⚠ Something ancient turns over in the dark water…', 'var(--blood)');
+    AudioSys.play('encounter');
+  }
+  let craterBossSpawned = false;
+  function spawnCraterBoss() {
+    if (craterBossSpawned) return; craterBossSpawned = true;
+    addEnemy(CRATER_BOSS, 0, -6, RPG.player.level + 6, false);
+    toast('⚠ The Fallen Star cracks open. MELBU FRAHMA rises.', 'var(--blood)');
     AudioSys.play('encounter');
   }
 
@@ -269,16 +464,96 @@ const World = (() => {
       renderer.setSize(innerWidth, innerHeight);
       if (Battle.scene) Battle.onResize();
     });
-    addEventListener('wheel', e => { /* reserved */ });
   }
 
-  // ---------- HELPERS ----------
-  const rnd = (a,b)=>a+Math.random()*(b-a);
-  function randInCircle(r){ const a=rnd(0,Math.PI*2), d=Math.sqrt(Math.random())*r; return {x:Math.cos(a)*d, z:Math.sin(a)*d}; }
   function collide(x, z) {
     if (Math.hypot(x,z) > WORLD_R) return true;
     for (const p of props) if (Math.hypot(x-p.x, z-p.z) < p.r + .5) return true;
     return false;
+  }
+
+  // ---------- ZONE TRAVEL ----------
+  function portalLocked(pt) { return pt.lockCheck ? pt.lockCheck() : false; }
+  function tryPortal() {
+    const p = player3d.group.position;
+    for (const pt of portals) {
+      if (Math.hypot(p.x-pt.x, p.z-pt.z) < 3.2) {
+        if (portalLocked(pt)) { toast('🔒 Sealed. The way is barred by a power you have not yet broken.'); return; }
+        AudioSys.play('dragoon');
+        buildZone(pt.to);
+        toast(`— ${ZONES[pt.to].name} —`);
+        if (pt.to === 'crater') setTimeout(spawnCraterBoss, 2500);
+        Main.onZoneChanged(pt.to);
+        return;
+      }
+    }
+  }
+  function nearPortal() {
+    const p = player3d.group.position;
+    for (const pt of portals) if (Math.hypot(p.x-pt.x, p.z-pt.z) < 3.2) return pt;
+    return null;
+  }
+
+  // ---------- QUEST INTERACTABLES ----------
+  function addInteract(cfg) {
+    // cfg: { id, x, z, col, label, kind, onUse }
+    const g = new M.Group();
+    let mesh;
+    if (cfg.kind === 'anchor') {
+      const spike = new M.Mesh(new M.ConeGeometry(.55, 2.4, 5), mat(0x140a1e, .7, .1));
+      spike.position.y = 1.1; spike.castShadow = true; g.add(spike);
+      mesh = new M.Mesh(new M.OctahedronGeometry(.6, 0), mat(0x2a0a3a, .25, .3, cfg.col, 1.6));
+      mesh.position.y = 2.6;
+    } else if (cfg.kind === 'attune') {
+      mesh = new M.Mesh(new M.OctahedronGeometry(.8, 0), mat(cfg.col, .2, .1, cfg.col, 1.2));
+      mesh.position.y = 1.3;
+      const base = new M.Mesh(new M.CylinderGeometry(.5, .7, .6, 7), mat(0x2a3040, .9));
+      base.position.y = .3; g.add(base);
+    } else { // shard / relic / meteor — small glowing pickup
+      mesh = new M.Mesh(new M.OctahedronGeometry(.45, 0), mat(cfg.col, .25, .3, cfg.col, 1.8));
+      mesh.position.y = .9;
+    }
+    g.add(mesh);
+    const l = new M.PointLight(cfg.col, 1.2, 10); l.position.y = 2; g.add(l);
+    g.position.set(cfg.x, 0, cfg.z);
+    scene.add(g);
+    interactables.push({ ...cfg, group: g, mesh, done: false });
+  }
+  function clearInteracts() {
+    for (const it of interactables) scene.remove(it.group);
+    interactables = [];
+  }
+  function syncQuestObjects(list) {
+    clearInteracts();
+    for (const cfg of list) addInteract(cfg);
+  }
+  function removeInteract(id) {
+    const it = interactables.find(x => x.id === id);
+    if (it) { scene.remove(it.group); interactables = interactables.filter(x => x !== it); }
+  }
+  function tryInteract() {
+    const p = player3d.group.position;
+    for (const it of interactables) {
+      if (Math.hypot(p.x-it.x, p.z-it.z) < 3) { it.onUse(it); return true; }
+    }
+    return false;
+  }
+  function nearInteract() {
+    const p = player3d.group.position;
+    for (const it of interactables) if (Math.hypot(p.x-it.x, p.z-it.z) < 3) return it;
+    return null;
+  }
+  function spawnAmbush(count) {
+    const Z = ZONES[currentZone];
+    const p0 = player3d.group.position;
+    for (let i=0;i<count;i++){
+      const a = rnd(0, Math.PI*2);
+      addEnemy(Z.enemies[rndi(0, Z.enemies.length-1)],
+        p0.x + Math.cos(a)*rnd(6,9), p0.z + Math.sin(a)*rnd(6,9),
+        RPG.player.level + Z.levelMod, Math.random() < .3);
+    }
+    toast('⚠ Ambush!', 'var(--blood)');
+    AudioSys.play('encounter');
   }
 
   // ---------- UPDATE ----------
@@ -286,7 +561,6 @@ const World = (() => {
   function update(dt) {
     animT += dt;
     const p = player3d.group.position;
-    // movement
     const fwd = new M.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     const right = new M.Vector3(-fwd.z, 0, fwd.x);
     const move = new M.Vector3();
@@ -299,7 +573,6 @@ const World = (() => {
       if (!collide(nx, p.z)) p.x = nx;
       if (!collide(p.x, nz)) p.z = nz;
       player3d.group.rotation.y = Math.atan2(move.x, move.z);
-      // run anim
       const s = Math.sin(animT*12);
       player3d.legL.rotation.x = s*.7; player3d.legR.rotation.x = -s*.7;
       player3d.armL.rotation.x = -s*.5; player3d.armR.rotation.x = s*.5;
@@ -308,17 +581,16 @@ const World = (() => {
     } else {
       player3d.legL.rotation.x = player3d.legR.rotation.x = 0;
       player3d.armL.rotation.x = player3d.armR.rotation.x = 0;
-      player3d.body.position.y = Math.sin(animT*2)*.03; // idle breath
+      player3d.body.position.y = Math.sin(animT*2)*.03;
     }
 
-    // camera
     const cx = p.x + Math.sin(camYaw)*Math.cos(camPitch)*CAM_DIST;
     const cz = p.z + Math.cos(camYaw)*Math.cos(camPitch)*CAM_DIST;
     const cy = p.y + Math.sin(camPitch)*CAM_DIST;
     camera.position.lerp(new M.Vector3(cx, cy, cz), 1 - Math.pow(.0001, dt));
     camera.lookAt(p.x, p.y + 1.6, p.z);
 
-    // fade trees that block the camera's view of the player
+    // fade trees blocking view
     const cp = camera.position;
     const segDx = p.x - cp.x, segDz = p.z - cp.z;
     const segLen2 = segDx*segDx + segDz*segDz;
@@ -332,14 +604,13 @@ const World = (() => {
       for (const m of pr.mats) m.opacity += (target - m.opacity) * Math.min(1, dt*8);
     }
 
-    // enemies
     for (const e of enemies) {
       if (e.dead) continue;
       const ep = e.c3d.group.position;
       const dist = Math.hypot(p.x-ep.x, p.z-ep.z);
       e.wanderT -= dt;
       let vx = 0, vz = 0;
-      if (dist < (e.boss? 14 : 9) && dist > .1) { // aggro chase
+      if (dist < (e.boss? 14 : 9) && dist > .1) {
         vx = (p.x-ep.x)/dist * e.speed; vz = (p.z-ep.z)/dist * e.speed;
       } else if (e.wanderT <= 0) { e.wanderA = rnd(0, Math.PI*2); e.wanderT = rnd(2,5); }
       else { vx = Math.cos(e.wanderA)*e.speed*.35; vz = Math.sin(e.wanderA)*e.speed*.35; }
@@ -350,7 +621,6 @@ const World = (() => {
       if (dist < 1.8 && onEncounter) { onEncounter(e); }
     }
 
-    // loot
     for (let i=lootDrops.length-1;i>=0;i--){
       const l = lootDrops[i]; l.t += dt;
       l.group.rotation.y += dt*2;
@@ -361,6 +631,7 @@ const World = (() => {
         if (l.item) {
           if (RPG.player.inventory.length < 24) {
             RPG.player.inventory.push(l.item);
+            (RPG.player.flags ||= {}).itemsFound = ((RPG.player.flags.itemsFound)||0) + 1;
             toast(`Picked up <b class="rarity-${l.item.rarity}">${l.item.name}</b>`);
             AudioSys.play('loot'); UI.refreshInv();
           } else toast('Inventory full!');
@@ -370,15 +641,34 @@ const World = (() => {
       }
     }
 
-    // ambient anims
-    scene.userData.spiritStone.rotation.y += dt*1.2;
-    scene.userData.spiritStone.position.y = 4.2 + Math.sin(animT*1.5)*.4;
-    scene.userData.skyGlow.scale.setScalar(1 + Math.sin(animT*.8)*.06);
-    fireflies.rotation.y += dt*.01;
-    fireflies.material.opacity = .6 + Math.sin(animT*2.3)*.25;
+    // interactables pulse + spin
+    for (const it of interactables) {
+      it.mesh.rotation.y += dt*2;
+      it.mesh.position.y = (it.kind==='anchor' ? 2.6 : it.kind==='attune' ? 1.3 : .9) + Math.sin(animT*2.5 + it.x)*.15;
+    }
 
-    // boss spawn condition
-    if (RPG.player && RPG.player.kills >= 8 && !bossSpawned) spawnBoss();
+    // portals pulse
+    for (const pt of portals) {
+      pt.mem.rotation.z += dt*1.5;
+      pt.mem.material.opacity = (portalLocked(pt) ? .25 : .65) + Math.sin(animT*3)*.15;
+    }
+
+    // ambient anims
+    if (scene.userData.spiritStone) {
+      scene.userData.spiritStone.rotation.y += dt*1.2;
+      scene.userData.spiritStone.position.y = 4.2 + Math.sin(animT*1.5)*.4;
+    }
+    if (scene.userData.skyGlow) scene.userData.skyGlow.scale.setScalar(1 + Math.sin(animT*.8)*.06);
+    particles.rotation.y += dt*.01;
+    particles.material.opacity = .6 + Math.sin(animT*2.3)*.25;
+
+    // herald spawns when the quest is active and the player nears the shrine
+    if (RPG.player && !bossSpawned && currentZone === 'forest'
+        && Main.getQuestStage && Main.getQuestStage() >= 3
+        && Math.hypot(p.x, p.z) < 22) spawnBoss();
+    // tyrant surfaces only when all drowned relics are found
+    if (RPG.player && currentZone === 'grotto' && !grottoBossSpawned
+        && (RPG.player.flags?.relics||0) >= 4) spawnGrottoBoss();
 
     renderer.render(scene, camera);
   }
@@ -387,55 +677,66 @@ const World = (() => {
     e.dead = true; scene.remove(e.c3d.group);
     enemies = enemies.filter(x => x !== e);
     RPG.player.kills++;
-    // drops
     const gp = e.c3d.group.position;
-    if (Math.random() < (e.boss ? 1 : .55)) {
-      const item = RPG.genItem(RPG.player.level + (e.boss?3:0));
+    // drops — elites always drop gear, others 55%
+    if (e.elite || e.boss || Math.random() < .55) {
+      const item = RPG.genItem(RPG.player.level + (e.boss?3:0) + (e.elite?2:0));
       dropLoot(gp.x + rnd(-1,1), gp.z + rnd(-1,1), item, null);
     }
+    if (Math.random() < .3 && !e.boss) dropLoot(gp.x + rnd(-1,1), gp.z + rnd(-1,1), RPG.genItem(RPG.player.level, 'normal'), null);
     dropLoot(gp.x + rnd(-1.5,1.5), gp.z + rnd(-1.5,1.5), null, Math.round(e.gold * (e.boss?1:rnd(.6,1.4))));
-    // respawn a regular enemy elsewhere
+    // potion drops
+    if (Math.random() < .25) { RPG.player.potions.hp++; toast('+1 Healing Potion'); }
+    else if (Math.random() < .15) { RPG.player.potions.mp++; toast('+1 Mana Potion'); }
+
+    // quest bookkeeping
+    const F = (RPG.player.flags ||= {});
+    if (currentZone === 'grotto' && !e.boss) F.grottoKills = (F.grottoKills||0) + 1;
+    if (e.elite) F.eliteKills = (F.eliteKills||0) + 1;
+    if (e.bossId) F[e.bossId + 'Dead'] = true;
+
+    if (e.bossId === 'melbu') {
+      setTimeout(() => UI.actComplete(), 1200);
+      return;
+    }
+    if (e.bossId === 'tyrant') {
+      setTimeout(() => UI.grottoVictory(), 1200);
+      return; // no respawn
+    }
     if (!e.boss) setTimeout(() => {
+      const Z = ZONES[currentZone];
       const p = randInCircle(WORLD_R-6);
-      if (Math.hypot(p.x,p.z) > 16) addEnemy(ENEMY_TYPES[rndi(0, ENEMY_TYPES.length-1)], p.x, p.z, RPG.player.level);
+      if (Math.hypot(p.x,p.z) > 16) addEnemy(Z.enemies[rndi(0, Z.enemies.length-1)], p.x, p.z,
+        RPG.player.level + Z.levelMod, Math.random() < .16);
     }, 12000);
     else {
-      setTimeout(() => UI.gameVictory(), 1200);
+      setTimeout(() => UI.gameVictory(), 1200); // herald down
     }
   }
-  const rndi = (a,b)=>Math.floor(rnd(a,b+1));
 
   // ---------- MINIMAP ----------
   function drawMinimap() {
     const cv = document.getElementById('minimap'); if (!cv) return;
     const ctx = cv.getContext('2d'); const R = cv.width/2;
     ctx.clearRect(0,0,cv.width,cv.height);
-    ctx.fillStyle = '#0a1210'; ctx.beginPath(); ctx.arc(R,R,R-2,0,7); ctx.fill();
+    ctx.fillStyle = currentZone === 'grotto' ? '#0a0a14' : '#0a1210';
+    ctx.beginPath(); ctx.arc(R,R,R-2,0,7); ctx.fill();
     const s = (R-4) / (WORLD_R+10);
-    // shrine
-    ctx.fillStyle = '#525a6e'; ctx.beginPath(); ctx.arc(R, R, 5, 0, 7); ctx.fill();
-    // enemies
+    if (currentZone === 'forest') { ctx.fillStyle = '#525a6e'; ctx.beginPath(); ctx.arc(R, R, 5, 0, 7); ctx.fill(); }
+    for (const pt of portals) {
+      ctx.fillStyle = '#cc88ff';
+      ctx.beginPath(); ctx.arc(R + pt.x*s, R + pt.z*s, 3, 0, 7); ctx.fill();
+    }
     for (const e of enemies) {
-      ctx.fillStyle = e.boss ? '#bb44ff' : '#ff4444';
+      ctx.fillStyle = e.boss ? '#bb44ff' : e.elite ? '#ffcc44' : '#ff4444';
       ctx.beginPath(); ctx.arc(R + e.c3d.group.position.x*s, R + e.c3d.group.position.z*s, e.boss?4:2.5, 0, 7); ctx.fill();
     }
-    // loot
     ctx.fillStyle = '#ffe14d';
     for (const l of lootDrops) { ctx.fillRect(R + l.group.position.x*s - 1.5, R + l.group.position.z*s - 1.5, 3, 3); }
-    // player
     const p = player3d.group.position;
     ctx.fillStyle = '#7ec8ff'; ctx.beginPath(); ctx.arc(R + p.x*s, R + p.z*s, 3.5, 0, 7); ctx.fill();
     ctx.strokeStyle = '#7ec8ff55'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(R + p.x*s, R + p.z*s, 8, 0, 7); ctx.stroke();
-  }
-
-  function reset() {
-    // full reset for new game
-    enemies.forEach(e => scene.remove(e.c3d.group)); enemies = [];
-    lootDrops.forEach(l => scene.remove(l.group)); lootDrops = [];
-    bossSpawned = false;
-    player3d.group.position.set(20, 0, 20);
-    spawnEnemies();
   }
 
   function setPlayerClass(clsKey) {
@@ -447,9 +748,10 @@ const World = (() => {
       getComputedStyle(document.querySelector(`.class-portrait.${RPG.CLASSES[clsKey].portrait}`)).background;
   }
 
-  return { init, update, drawMinimap, reset, setPlayerClass, removeEnemy,
+  return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
+    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush,
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },
-    get player3d(){ return player3d; },
-    set onEncounter(fn){ onEncounter = fn; },
-    get enemies(){ return enemies; } };
+    get player3d(){ return player3d; }, get enemies(){ return enemies; },
+    get zone(){ return currentZone; },
+    set onEncounter(fn){ onEncounter = fn; } };
 })();
