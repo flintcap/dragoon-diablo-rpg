@@ -35,3 +35,13 @@ unique Chain Lightning party-wide special, guaranteed unique drop), per-zone bat
 theming (7 palettes). Differs from prior: first biome built around live weather; first boss
 gated behind another act's completion; first arena re-theming. Run logged at
 verifier/runs/2026-07-27-stormpeak-arenas.md — all PASS, Act-I regression green.
+
+## v5 — 2026-07-27
+Measures: Lyra the Pyromancer as 4th controllable party member — cell rescue event in the
+Hollow Deep gated on the Warden's death, 4-actor turn cycle (player→Serah→Kael→Lyra→enemy),
+4 fire skills with cast anims, KO/recovery path, lyra-bars HUD, lyraWeapon equip slot with
+Alt-click equip, enemy target pools incl. Lyra, save migration. Also caught & fixed:
+polish.css was never linked in index.html (v3 styles silently inactive). Differs from prior:
+first party member added to an existing zone (retro-content), first caster ally, first save
+migration. Run logged at verifier/runs/2026-07-27-lyra-pyromancer.md — all PASS,
+Act-I + Stormpeak regressions green.
