@@ -201,3 +201,43 @@ button { font-family:inherit; cursor:pointer; }
   font-size:14px; letter-spacing:1px; animation:toastIn 3s ease forwards; box-shadow:0 4px 18px #000; }
 @keyframes toastIn { 0%{opacity:0; transform:translateY(14px);} 10%{opacity:1; transform:none;}
   80%{opacity:1;} 100%{opacity:0; transform:translateY(-10px);} }
+
+/* quest tracker + interact hint */
+#quest-tracker { margin-top:12px; width:160px; background:#0d1220cc; border:1px solid var(--panel-edge);
+  border-radius:5px; padding:8px 10px; text-align:left; }
+#quest-tracker h4 { color:var(--gold); font-size:11px; letter-spacing:2px; margin-bottom:4px; }
+#quest-text { font-size:12px; color:var(--text); line-height:1.45; }
+#quest-text .q-prog { color:var(--lod-ice); }
+#quest-text .q-done { color:#6fcf97; }
+#interact-hint { position:fixed; bottom:96px; left:50%; transform:translateX(-50%); z-index:22;
+  background:#0d1424e8; border:1px solid var(--lod-blue); border-radius:5px; padding:8px 20px;
+  font-size:14px; letter-spacing:1px; color:var(--lod-ice); box-shadow:0 0 20px rgba(58,123,213,.35); }
+#interact-hint b { color:var(--gold-hi); }
+
+/* ---------- INTRO ---------- */
+#intro-screen { z-index:55; }
+.intro-card { max-width:640px; background:linear-gradient(180deg,#101828,#0a0f1c);
+  border:1px solid var(--panel-edge); border-radius:8px; padding:34px 44px;
+  box-shadow:0 0 60px rgba(0,0,0,.8), 0 0 30px rgba(58,123,213,.15); }
+.intro-act { font-size:15px; letter-spacing:12px; color:var(--lod-ice); text-align:center; }
+.intro-name { font-size:34px; letter-spacing:6px; color:var(--gold); text-align:center;
+  margin:6px 0 20px; text-shadow:0 0 20px rgba(212,175,55,.5); }
+.intro-text { font-size:15px; line-height:1.75; color:var(--text); margin-bottom:14px; }
+.intro-quote { color:var(--lod-ice); font-style:italic; text-align:center; font-size:16px;
+  border-left:3px solid var(--lod-blue); padding-left:14px; }
+
+/* ---------- QUEST LOG ---------- */
+#quest-log-body { max-height:64vh; overflow:auto; padding-right:8px; }
+.ql-act { color:var(--lod-ice); letter-spacing:3px; font-size:13px; margin:18px 0 8px;
+  border-bottom:1px solid var(--panel-edge); padding-bottom:5px; }
+.ql-quest { background:#0d1424; border:1px solid #1c2946; border-radius:5px;
+  padding:12px 16px; margin-bottom:10px; }
+.ql-quest.locked { opacity:.45; }
+.ql-quest.done { border-color:#2a5c3a; }
+.ql-quest.active { border-color:var(--gold); box-shadow:0 0 14px rgba(212,175,55,.15); }
+.ql-quest h4 { color:var(--gold-hi); letter-spacing:1px; margin-bottom:6px; }
+.ql-check { color:#6fcf97; margin-left:8px; }
+.ql-story { font-size:13px; color:var(--text); line-height:1.6; margin-bottom:8px; opacity:.9; }
+.ql-objs { font-size:13px; line-height:1.6; }
+.ql-hint { color:var(--dim); font-size:11.5px; margin:2px 0 4px 14px; font-style:italic; }
+.ql-rewards { color:var(--dim); font-size:11.5px; margin-top:8px; letter-spacing:1px; }
