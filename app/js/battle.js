@@ -1,4 +1,4 @@
-/* battle.js — Legend of Dragoon-style turn-based battles with timed Addition combos */
+/* battle.js — LOD turn-based battles: party-of-3 control, timed Additions, enemy specials */
 const Battle = (() => {
   const M = THREE;
   let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
@@ -7,6 +7,7 @@ const Battle = (() => {
   let playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
   let ringState = null, arenaLight = null, dragoonWings = null;
   let currentActor = 'player', serahKO = false, serahDefending = false, partyDodge = 0, partyDodgeTurns = 0;
+  let kaelModel = null, kaelKO = false, kaelDefending = false, partyDef = 0, partyDefTurns = 0;
 
   const ui = id => document.getElementById(id);
   const log = msg => ui('battle-log').innerHTML = msg;
@@ -91,7 +92,7 @@ const Battle = (() => {
     playerModel = WorldBuild(RPG.CLASSES[RPG.player.cls].color, false, 1);
     playerModel.group.position.set(-4.5, .3, -1); playerModel.group.rotation.y = Math.PI/2;
     scene.add(playerModel.group);
-    // Serah the Wingly — party member
+    // Serah the Wingly — AI companion
     allyModel = buildRig(0x9fd4ff, false, .88, true);
     allyModel.group.position.set(-5.5, .3, 2.2); allyModel.group.rotation.y = Math.PI/2;
     // her Wingly bow
@@ -106,6 +107,19 @@ const Battle = (() => {
     bow.position.set(.55, 1.2, 0); bow.rotation.z = -.2;
     allyModel.body.add(bow);
     scene.add(allyModel.group);
+    // Kael the Lancer — third party member (if rescued)
+    if (kaelModel) { scene.remove(kaelModel.group); kaelModel = null; }
+    if (RPG.player.flags && RPG.player.flags.kaelJoined) {
+      kaelModel = buildRig(0xd4a24a, false, 1.02, true);
+      kaelModel.group.position.set(-6.2, .3, -2.4); kaelModel.group.rotation.y = Math.PI/2;
+      if (kaelModel.sword) kaelModel.body.remove(kaelModel.sword);
+      const sp = World.buildWeaponMesh ? World.buildWeaponMesh('spear') : null;
+      if (sp) { sp.position.set(.6, 1.15, 0); sp.rotation.z = -.4; kaelModel.body.add(sp); kaelModel.sword = sp; }
+      scene.add(kaelModel.group);
+      ui('kael-bars').classList.remove('hidden');
+    } else ui('kael-bars').classList.add('hidden');
+    kaelKO = false; kaelDefending = false; partyDef = 0; partyDefTurns = 0;
+
     enemyModel = World.makeEnemyModel(enemy, enemy.scale * (enemy.boss?1.6:1.3));
     enemyModel.group.position.set(4.5, .3, 0); enemyModel.group.rotation.y = -Math.PI/2;
     scene.add(enemyModel.group);
@@ -117,8 +131,10 @@ const Battle = (() => {
     currentActor = 'player'; serahKO = false; serahDefending = false; partyDodge = 0; partyDodgeTurns = 0;
     const ss = RPG.serahStats();
     if (RPG.player.serah.hp <= 0) RPG.player.serah.hp = Math.round(ss.maxHp * .6);
+    const ks = RPG.kaelStats();
+    if (RPG.player.kael.hp <= 0) RPG.player.kael.hp = Math.round(ks.maxHp * .6);
     ui('serah-bars').classList.remove('hidden');
-    updateSerahBars();
+    updateAllyBars();
 
     // herald shield hint
     if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed || 0) < 3) {
@@ -149,7 +165,11 @@ const Battle = (() => {
     const sse = RPG.serahStats();
     RPG.player.serah.hp = Math.max(RPG.player.serah.hp, Math.round(sse.maxHp * .5));
     RPG.player.serah.mp = sse.maxMp;
+    const kse = RPG.kaelStats();
+    RPG.player.kael.hp = Math.max(RPG.player.kael.hp, Math.round(kse.maxHp * .5));
+    RPG.player.kael.mp = kse.maxMp;
     ui('serah-bars').classList.add('hidden');
+    ui('kael-bars').classList.add('hidden');
     ui('boss-bar').classList.add('hidden');
     ui('battle-ui').classList.add('hidden');
     ui('battle-menu').classList.add('hidden');
@@ -184,12 +204,18 @@ const Battle = (() => {
 
   // ---------- TURN FLOW ----------
   function updateTurn(t) { ui('turn-indicator').textContent = t; }
-  function updateSerahBars() {
+  function updateAllyBars() {
     const p = RPG.player; if (!p || !ui('serah-bars')) return;
     const ss = RPG.serahStats();
     ui('serah-hp').style.width = Math.max(0, p.serah.hp/ss.maxHp*100) + '%';
     ui('serah-mp').style.width = Math.max(0, p.serah.mp/ss.maxMp*100) + '%';
     ui('serah-bars').style.opacity = serahKO ? .4 : 1;
+    if (ui('kael-bars') && kaelModel) {
+      const ks = RPG.kaelStats();
+      ui('kael-hp').style.width = Math.max(0, p.kael.hp/ks.maxHp*100) + '%';
+      ui('kael-mp').style.width = Math.max(0, p.kael.mp/ks.maxMp*100) + '%';
+      ui('kael-bars').style.opacity = kaelKO ? .4 : 1;
+    }
   }
   function banner(t) {
     const b = ui('battle-banner'); b.textContent = t; b.style.opacity = 1;
@@ -201,9 +227,9 @@ const Battle = (() => {
     turn = 'player';
     updateTurn(currentActor === 'player'
       ? 'YOUR TURN — ' + RPG.player.name.toUpperCase()
-      : 'YOUR TURN — SERAH');
+      : 'YOUR TURN — ' + currentActor.toUpperCase());
     buildMenu();
-    updateSerahBars();
+    updateAllyBars();
   }
   function hideMenu(){ ui('battle-menu').classList.add('hidden'); ui('battle-submenu').classList.add('hidden'); }
 
@@ -397,25 +423,38 @@ const Battle = (() => {
   }
   function serahPhase() {
     if (!active) return;
-    if (serahKO) { enemyTurn(); return; }
+    if (serahKO) { kaelPhase(); return; }
     currentActor = 'serah';
+    showMenu();
+  }
+  function kaelPhase() {
+    if (!active) return;
+    if (!kaelModel || kaelKO) { enemyTurn(); return; }
+    currentActor = 'kael';
     showMenu();
   }
   function afterActorAction() {
     if (currentActor === 'player') serahPhase();
+    else if (currentActor === 'serah') kaelPhase();
     else { currentActor = 'player'; enemyTurn(); }
   }
 
   // ---------- PLAYER ACTIONS ----------
+  function actorModel() { return currentActor === 'player' ? playerModel : currentActor === 'serah' ? allyModel : kaelModel; }
+  function actorStats() {
+    const p = RPG.player;
+    if (currentActor === 'player') return { atk: p.attack, critCh: p.critChance, chainMax: RPG.CLASSES[p.cls].additionCount + (p.dragoonForm ? 2 : 0) };
+    const s = currentActor === 'serah' ? RPG.serahStats() : RPG.kaelStats();
+    return { atk: s.attack, critCh: s.critChance, chainMax: s.chainMax };
+  }
+
   async function doAttack() {
     hideMenu();
     const p = RPG.player;
     const isPlayer = currentActor === 'player';
-    const model = isPlayer ? playerModel : allyModel;
-    const ss = RPG.serahStats();
-    const atk = isPlayer ? p.attack : ss.attack;
-    const critCh = isPlayer ? p.critChance : ss.critChance;
-    const maxChain = (isPlayer ? RPG.CLASSES[p.cls].additionCount + (p.dragoonForm ? 2 : 0) : ss.chainMax);
+    const model = actorModel();
+    const A = actorStats();
+    const atk = A.atk, critCh = A.critCh, maxChain = A.chainMax;
     runAddition(maxChain, async (chain, totalMult) => {
       if (!active) return;
       if (chain > 0) {
@@ -430,7 +469,7 @@ const Battle = (() => {
         enemy.hpCur -= dmg;
         UI.floaterAt(project(enemyModel.group.position, 2.2), dmg, crit ? 'crit' : '');
         if (isPlayer && p.lifeLeech > 0) { p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg*p.lifeLeech)); }
-        log(`${isPlayer?'': 'Serah: '}${chain}-hit Addition for ${dmg} damage${crit?' — CRITICAL!':''}`);
+        log(`${isPlayer?'': currentActor.charAt(0).toUpperCase()+currentActor.slice(1)+': '}${chain}-hit Addition for ${dmg} damage${crit?' — CRITICAL!':''}`);
         await wait(650);
         if (checkEnemyDead()) return;
       } else log('The Addition failed — no damage!');
@@ -439,7 +478,7 @@ const Battle = (() => {
   }
 
   async function doSkill(skill) {
-    if (currentActor === 'serah') return doSerahSkill(skill);
+    if (currentActor !== 'player') return doAllySkill(skill);
     hideMenu();
     const p = RPG.player;
     const rank = RPG.skillRank(skill.id);
@@ -490,39 +529,43 @@ const Battle = (() => {
     afterActorAction();
   }
 
-  async function doSerahSkill(skill) {
+  async function doAllySkill(skill) {
     hideMenu();
     const p = RPG.player;
-    const ss = RPG.serahStats();
-    if (p.serah.mp < skill.mp) { log('Serah is out of MP!'); showMenu(); return; }
-    p.serah.mp -= skill.mp;
+    const isSerah = currentActor === 'serah';
+    const ss = isSerah ? RPG.serahStats() : RPG.kaelStats();
+    const pool = isSerah ? p.serah : p.kael;
+    const model = isSerah ? allyModel : kaelModel;
+    if (pool.mp < skill.mp) { log(`${currentActor} is out of MP!`); showMenu(); return; }
+    pool.mp -= skill.mp;
     if (skill.type === 'heal') {
       const amt = Math.round(p.maxHp * skill.mult);
       p.hp = Math.min(p.maxHp, p.hp + amt);
-      elementalFX('ice', allyModel); AudioSys.play('heal');
+      elementalFX('ice', model); AudioSys.play('heal');
       UI.floaterAt(project(playerModel.group.position, 2.2), '+'+amt, 'perfect');
-      log(`Serah's Wingly Light restores ${amt} HP.`);
+      log(`${isSerah ? "Serah's Wingly Light" : "Kael's rally"} restores ${amt} HP.`);
       UI.refreshHUD();
     } else if (skill.type === 'buff') {
-      partyDodge = skill.mult; partyDodgeTurns = 3;
-      elementalFX('arcane', allyModel);
-      log('Tailwind wraps the party — +18% dodge for 3 turns!');
+      if (isSerah) { partyDodge = skill.mult; partyDodgeTurns = 3;
+        log('Tailwind wraps the party — +18% dodge for 3 turns!'); }
+      else { partyDef = skill.mult; partyDefTurns = 3;
+        log('Bulwark! The party gains +25% defense for 3 turns!'); }
+      elementalFX('arcane', model);
     } else {
-      // projectile arrow then impact
-      await projectileFX(allyModel, enemyModel, 0xbfe8ff);
+      await projectileFX(model, enemyModel, isSerah ? 0xbfe8ff : 0xffcc66);
       let dmg = ss.attack * skill.mult;
       const crit = Math.random() < (ss.critChance + (skill.critBonus||0));
       if (crit) dmg *= ss.critMult;
       dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
       if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
-      elementalFX('phys', enemyModel);
+      slashFX(enemyModel, crit);
       enemy.hpCur -= dmg;
       UI.floaterAt(project(enemyModel.group.position, 2.4), dmg, crit?'crit':'perfect');
-      log(`Serah's ${skill.name} hits for ${dmg}${crit?' — CRITICAL!':''}`);
+      log(`${isSerah?'Serah':'Kael'}'s ${skill.name} hits for ${dmg}${crit?' — CRITICAL!':''}`);
       await wait(500);
       if (checkEnemyDead()) return;
     }
-    updateSerahBars();
+    updateAllyBars();
     afterActorAction();
   }
 
@@ -548,9 +591,9 @@ const Battle = (() => {
       elementalFX('ice', playerModel);
       log('You brace for impact. (+12% spirit)');
     } else {
-      serahDefending = true;
-      elementalFX('ice', allyModel);
-      log('Serah takes a defensive stance.');
+      if (currentActor === 'serah') serahDefending = true; else kaelDefending = true;
+      elementalFX('ice', actorModel());
+      log(`${currentActor.charAt(0).toUpperCase()+currentActor.slice(1)} takes a defensive stance.`);
     }
     await wait(450); afterActorAction();
   }
@@ -600,6 +643,130 @@ const Battle = (() => {
     if (!silent) log('The Dragoon form fades…');
   }
 
+  // ---------- TARGET DAMAGE HELPERS ----------
+  function targetInfo(tgt) {
+    const p = RPG.player;
+    if (tgt === 'serah') return { model: allyModel, def: RPG.serahStats().defense, defending: serahDefending, dodgeBonus: 0, isPlayer: false };
+    if (tgt === 'kael') return { model: kaelModel, def: RPG.kaelStats().defense, defending: kaelDefending, dodgeBonus: 0, isPlayer: false };
+    return { model: playerModel, def: p.defense, defending: playerBuffs.defending, isPlayer: true };
+  }
+  async function damageAlly(tgt, dmg, verb) {
+    const p = RPG.player;
+    const T = targetInfo(tgt);
+    if (T.defending) dmg *= .5;
+    if (T.isPlayer) dmg *= (1 - Math.min(.6, playerBuffs.defPct));
+    dmg *= (1 - partyDef);
+    const dr = T.def / (T.def + 120);
+    dmg = Math.max(1, Math.round(dmg * (1-dr) * rnd(.85,1.15)));
+    const label = tgt === 'player' ? 'you' : tgt;
+    if (tgt === 'serah') p.serah.hp -= dmg;
+    else if (tgt === 'kael') p.kael.hp -= dmg;
+    else p.hp -= dmg;
+    AudioSys.play('playerHurt'); shake(.5);
+    UI.floaterAt(project(T.model.group.position, 2.1), dmg, '');
+    log(`${enemy.name} ${verb} ${label} for ${dmg}.`);
+    if (tgt === 'serah' && p.serah.hp <= 0) { p.serah.hp = 0; serahKO = true; collapseAlly(allyModel, 'Serah'); }
+    else if (tgt === 'kael' && p.kael.hp <= 0) { p.kael.hp = 0; kaelKO = true; collapseAlly(kaelModel, 'Kael'); }
+    updateAllyBars();
+    if (tgt === 'player') {
+      UI.refreshHUD();
+      // cheat death
+      if (p.hp <= 0 && p.cheatDeath && !p.cheatDeathUsed) {
+        p.hp = 1; p.cheatDeathUsed = true;
+        log('★ UNDYING WILL — you refuse to fall!');
+        elementalFX('arcane', playerModel);
+      }
+      if (p.hp <= 0) {
+        await wait(700);
+        AudioSys.play('defeat');
+        banner('YOU HAVE FALLEN');
+        await wait(1500);
+        end(false);
+      }
+    }
+    return dmg;
+  }
+  function collapseAlly(model, name) {
+    log(`💔 ${name} is down! They cannot act until the battle ends.`);
+    const g = model.group;
+    const st = performance.now();
+    (function frame(now){
+      const t = Math.min(1, (now-st)/800);
+      g.rotation.z = t * 1.5; g.position.y = .3 - t*.5;
+      if (t < 1) requestAnimationFrame(frame);
+    })(st);
+  }
+  async function hitTarget(tgt, baseDmg, verb) {
+    lunge(enemyModel, targetInfo(tgt).model, .8);
+    await wait(250);
+    return damageAlly(tgt, baseDmg, verb);
+  }
+
+  // ---------- ENEMY SPECIAL ATTACKS — unique per enemy family ----------
+  async function specialAttack() {
+    const p = RPG.player;
+    const kind = enemy.kind || 'humanoid';
+    if (kind === 'wolf') {
+      const tgt = pickTarget();
+      banner('🐺 SAVAGE BITE 🐺');
+      log(`${enemy.name} lunges with frothing jaws!`);
+      AudioSys.play('crit');
+      lunge(enemyModel, targetInfo(tgt).model, 1.2);
+      // jaw snap anim
+      if (enemyModel.head) {
+        const h = enemyModel.head, st = performance.now();
+        (function frame(now){ const t = Math.min(1,(now-st)/300);
+          h.scale.setScalar(1 + Math.sin(t*Math.PI)*.5);
+          if (t<1) requestAnimationFrame(frame); else h.scale.setScalar(1); })(st);
+      }
+      await wait(300);
+      await damageAlly(tgt, enemy.dmg * 1.4, 'savagely bites');
+    } else if (kind === 'wraith') {
+      const tgt = pickTarget();
+      banner('🌀 VOID BOLT 🌀');
+      log(`${enemy.name} hurls a shrieking void bolt!`);
+      await projectileFX(enemyModel, targetInfo(tgt).model, 0xcc88ff);
+      await damageAlly(tgt, enemy.dmg * 1.5, 'blasts with void energy');
+    } else if (kind === 'golem') {
+      banner('💥 SEISMIC SLAM 💥');
+      log(`${enemy.name} slams the ground — the shockwave hits everyone!`);
+      // shockwave ring on the floor
+      const ringM = new M.Mesh(new M.TorusGeometry(1, .12, 8, 32),
+        new M.MeshBasicMaterial({ color: 0xffcc66, transparent:true, opacity:.9, blending:M.AdditiveBlending, depthWrite:false }));
+      ringM.rotation.x = Math.PI/2; ringM.position.y = .4;
+      ringM.position.x = enemyModel.group.position.x; ringM.position.z = enemyModel.group.position.z;
+      scene.add(ringM);
+      const st = performance.now();
+      (function frame(now){ const t = (now-st)/600;
+        if (t >= 1) { scene.remove(ringM); return; }
+        ringM.scale.setScalar(1 + t*10); ringM.material.opacity = .9*(1-t);
+        requestAnimationFrame(frame); })(st);
+      shake(1); AudioSys.play('crit');
+      await wait(350);
+      const targets = ['player'];
+      if (!serahKO) targets.push('serah');
+      if (kaelModel && !kaelKO) targets.push('kael');
+      for (const tgt of targets) { await damageAlly(tgt, enemy.dmg * .65, 'rocks'); }
+    } else {
+      // humanoid flourish — two rapid slashes at random targets
+      banner('⚔ CURSED FLOURISH ⚔');
+      log(`${enemy.name} unleashes a blinding sword flourish!`);
+      for (let i=0;i<2;i++){
+        const tgt = pickTarget();
+        slashFX(targetInfo(tgt).model, true);
+        AudioSys.play('swing');
+        await wait(280);
+        await damageAlly(tgt, enemy.dmg * .8, 'slashes');
+      }
+    }
+  }
+  function pickTarget() {
+    const pool = ['player'];
+    if (!serahKO) pool.push('serah');
+    if (kaelModel && !kaelKO) pool.push('kael');
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+
   // ---------- ENEMY TURN ----------
   async function enemyTurn() {
     if (!active) return;
@@ -614,7 +781,7 @@ const Battle = (() => {
       if (enemy.phase2 && !enemy.phase2Done && enemy.hpCur < enemy.maxHp * .5) {
         enemy.phase2Done = true;
         enemy.dmg = Math.round(enemy.dmg * enemy.phase2.dmgMult);
-        enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct));
+        enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct);
         banner(enemy.phase2.name);
         AudioSys.play('dragoon');
         enemyModel.group.traverse(o => { if (o.material && o.material.emissive !== undefined) { o.material.emissive = new M.Color(enemy.phase2.color); o.material.emissiveIntensity = .8; } });
@@ -641,66 +808,32 @@ const Battle = (() => {
     dots = dots.filter(d => d.turns > 0);
     if (checkEnemyDead()) return;
 
-    // enemy attack — picks a target: 65% the hero, 35% Serah
-    const targetSerah = !serahKO && Math.random() < .35;
-    const tModel = targetSerah ? allyModel : playerModel;
-    const tDodge = (targetSerah ? p.dodge*.8 : p.dodge + playerBuffs.dodge) + partyDodge;
+    // ---- enemy special attack (25% chance, unique per enemy kind) ----
+    if (Math.random() < .25) { await specialAttack(); }
+    else {
+    // enemy attack — picks a target from the party
+    const pool = ['player'];
+    if (!serahKO) pool.push('serah');
+    if (kaelModel && !kaelKO) pool.push('kael');
+    const tgt = pool[Math.floor(Math.random()*pool.length)];
+    const targetSerah = tgt === 'serah', targetKael = tgt === 'kael';
+    const tModel = targetSerah ? allyModel : targetKael ? kaelModel : playerModel;
+    const tDodge = (targetSerah ? p.dodge*.8 : targetKael ? p.dodge*.85 : p.dodge + playerBuffs.dodge) + partyDodge;
     if (Math.random() < (enemyDebuff.miss || 0)) {
       log(`${enemy.name} attacks but misses in the smoke!`);
     } else if (Math.random() < tDodge) {
-      log(`${targetSerah ? 'Serah dodges' : 'You dodge'} the attack!`); AudioSys.play('swing');
+      log(`${targetSerah ? 'Serah dodges' : targetKael ? 'Kael dodges' : 'You dodge'} the attack!`); AudioSys.play('swing');
     } else {
-      lunge(enemyModel, tModel, .8);
-      const tDef = targetSerah ? RPG.serahStats().defense : p.defense;
-      const tDefending = targetSerah ? serahDefending : playerBuffs.defending;
-      let dmg = enemy.dmg * (1 - (enemyDebuff.dmg||0));
-      if (tDefending) dmg *= .5;
-      if (!targetSerah) dmg *= (1 - Math.min(.6, playerBuffs.defPct));
-      const dr = tDef / (tDef + 120);
-      dmg = Math.max(1, Math.round(dmg * (1-dr) * rnd(.85,1.15)));
-      await wait(250);
-      if (targetSerah) {
-        p.serah.hp -= dmg;
-        AudioSys.play('playerHurt'); shake(.4);
-        UI.floaterAt(project(allyModel.group.position, 2.0), dmg, '');
-        log(`${enemy.name} hits Serah for ${dmg}.`);
-        if (p.serah.hp <= 0) {
-          p.serah.hp = 0; serahKO = true;
-          log('💔 Serah is down! She cannot act until the battle ends.');
-          const g = allyModel.group;
-          const st = performance.now();
-          (function frame(now){
-            const t = Math.min(1, (now-st)/800);
-            g.rotation.z = t * 1.5; g.position.y = .3 - t*.5;
-            if (t < 1) requestAnimationFrame(frame);
-          })(st);
-        }
-        updateSerahBars();
-      } else {
-      p.hp -= dmg;
-      AudioSys.play('playerHurt'); shake(.5);
-      UI.floaterAt(project(playerModel.group.position, 2.2), dmg, '');
-      log(`${enemy.name} hits you for ${dmg}.`);
-      }
-      // cheat death
-      if (p.hp <= 0 && p.cheatDeath && !p.cheatDeathUsed) {
-        p.hp = 1; p.cheatDeathUsed = true;
-        log('★ UNDYING WILL — you refuse to fall!');
-        elementalFX('arcane', playerModel);
-      }
-      if (p.hp <= 0) {
-        await wait(800);
-        AudioSys.play('defeat');
-        banner('YOU HAVE FALLEN');
-        await wait(1600);
-        end(false); return;
-      }
+      await hitTarget(tgt, enemy.dmg, 'hits');
     }
-    playerBuffs.defending = false; serahDefending = false;
+    }
+
+    playerBuffs.defending = false; serahDefending = false; kaelDefending = false;
     // timers
     if (enemyDebuff.turns > 0 && --enemyDebuff.turns === 0) { enemyDebuff.dmg = 0; enemyDebuff.miss = 0; }
     if (playerBuffs.turns > 0 && --playerBuffs.turns === 0) { playerBuffs.dodge = 0; playerBuffs.defPct = 0; }
     if (partyDodgeTurns > 0 && --partyDodgeTurns === 0) partyDodge = 0;
+    if (partyDefTurns > 0 && --partyDefTurns === 0) partyDef = 0;
     if (p.dragoonForm && --dragoonTurns === 0) endDragoon(false);
     p.spirit = Math.min(100, p.spirit + 3);
     UI.refreshHUD();
@@ -730,14 +863,16 @@ const Battle = (() => {
     const sub = ui('battle-submenu'); sub.innerHTML = '';
     const p = RPG.player;
     let any = false;
-    if (currentActor === 'serah') {
-      for (const s of RPG.SERAH_SKILLS) {
+    if (currentActor !== 'player') {
+      const skillList = currentActor === 'serah' ? RPG.SERAH_SKILLS : RPG.KAEL_SKILLS;
+      const pool = currentActor === 'serah' ? p.serah : p.kael;
+      for (const s of skillList) {
         if (p.level < (s.req||0)) continue;
         any = true;
         const b = document.createElement('button');
         b.className = 'battle-btn';
         b.innerHTML = `${s.icon} ${s.name} <small>${s.mp} MP · ${s.desc}</small>`;
-        b.disabled = p.serah.mp < s.mp;
+        b.disabled = pool.mp < s.mp;
         b.onclick = () => { AudioSys.play('click'); doSkill(s); };
         sub.appendChild(b);
       }
@@ -745,7 +880,7 @@ const Battle = (() => {
       back.className = 'battle-btn'; back.innerHTML = '↩ Back';
       back.onclick = () => { AudioSys.play('click'); showMenu(); };
       sub.appendChild(back);
-      if (!any) log('Serah has no usable skills yet.');
+      if (!any) log('No usable skills yet.');
       ui('battle-menu').classList.add('hidden');
       sub.classList.remove('hidden');
       return;
