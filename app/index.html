@@ -62,31 +62,6 @@
   </div>
 </div>
 
-<!-- ============ DIALOGUE ============ -->
-<div id="dialogue" class="modal hidden">
-  <div class="modal-panel dlg-panel">
-    <h2 id="dlg-name">NPC <span class="modal-close" data-close="dialogue">✕</span></h2>
-    <div id="dlg-role"></div>
-    <p id="dlg-text"></p>
-    <div id="dlg-buttons">
-      <button id="dlg-shop" class="btn-primary hidden">BROWSE WARES</button>
-      <button id="dlg-leave" class="btn-secondary">LEAVE</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ SHOP ============ -->
-<div id="shop" class="modal hidden">
-  <div class="modal-panel wide">
-    <h2 id="shop-title">SHOP <span id="shop-gold"></span> <span class="modal-close" data-close="shop">✕</span></h2>
-    <div id="shop-tabs">
-      <button id="tab-buy" class="shop-tab active">BUY</button>
-      <button id="tab-sell" class="shop-tab">SELL</button>
-    </div>
-    <div id="shop-list"></div>
-  </div>
-</div>
-
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
   <div id="hud-topleft">
@@ -128,6 +103,11 @@
       <div class="bar kael-hp-bar"><div id="kael-hp"></div></div>
       <div class="bar kael-mp-bar"><div id="kael-mp"></div></div>
     </div>
+    <div id="lyra-bars" class="hidden">
+      <span class="lyra-label">LYRA</span>
+      <div class="bar lyra-hp-bar"><div id="lyra-hp"></div></div>
+      <div class="bar lyra-mp-bar"><div id="lyra-mp"></div></div>
+    </div>
   </div>
   <div id="vignette"></div>
   <div id="boss-bar" class="hidden"><div id="boss-name"></div><div id="boss-track"><div id="boss-fill"></div></div></div>
@@ -137,7 +117,13 @@
     <div id="ring-judge"></div>
   </div>
   <div id="combo-counter" class="hidden"></div>
-  <div id="battle-menu" class="hidden"></div>
+  <div id="battle-menu" class="hidden">
+    <button class="battle-btn" data-action="attack">⚔ Attack <small>Addition combo</small></button>
+    <button class="battle-btn" data-action="skills">✦ Skills <small>MP cost</small></button>
+    <button class="battle-btn" data-action="items">✚ Items <small>potions</small></button>
+    <button class="battle-btn" data-action="dragoon" id="btn-dragoon">🐉 Dragoon <small id="dragoon-req">needs 100% spirit</small></button>
+    <button class="battle-btn" data-action="defend">🛡 Defend <small>half damage, +spirit</small></button>
+  </div>
   <div id="battle-submenu" class="hidden"></div>
   <div id="battle-log"></div>
 </div>
@@ -201,6 +187,31 @@
 <div id="toast-wrap"></div>
 <div id="zone-title" class="hidden"><div id="zone-title-act"></div><div id="zone-title-name"></div></div>
 <div id="fade-overlay"></div>
+
+<!-- ============ DIALOGUE ============ -->
+<div id="dialogue" class="modal hidden">
+  <div class="modal-panel dlg-panel">
+    <h2 id="dlg-name">NPC <span class="modal-close" data-close="dialogue">✕</span></h2>
+    <div id="dlg-role"></div>
+    <p id="dlg-text"></p>
+    <div id="dlg-buttons">
+      <button id="dlg-shop" class="btn-primary hidden">BROWSE WARES</button>
+      <button id="dlg-leave" class="btn-secondary">LEAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SHOP ============ -->
+<div id="shop" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2 id="shop-title">SHOP <span id="shop-gold"></span> <span class="modal-close" data-close="shop">✕</span></h2>
+    <div id="shop-tabs">
+      <button id="tab-buy" class="shop-tab active">BUY</button>
+      <button id="tab-sell" class="shop-tab">SELL</button>
+    </div>
+    <div id="shop-list"></div>
+  </div>
+</div>
 
 <script src="js/three.min.js"></script>
 <script src="js/textures.js"></script>

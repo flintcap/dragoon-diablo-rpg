@@ -1,4 +1,4 @@
-/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory, party (Serah + Kael) */
+/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory */
 const RPG = (() => {
 
   // ---------- CLASSES ----------
@@ -144,6 +144,7 @@ const RPG = (() => {
       buffs: {}, cheatDeathUsed: false, kills: 0,
       serah: { hp: 0, mp: 0, weapon: null },
       kael: { hp: 0, mp: 0, weapon: null },
+      lyra: { hp: 0, mp: 0, weapon: null },
     };
     // starter weapon
     const w = genItem(1, 'normal', 'weapon', clsKey);
@@ -151,32 +152,9 @@ const RPG = (() => {
     recalc(); player.hp = player.maxHp; player.mp = player.maxMp;
     player.serah.hp = serahStats().maxHp; player.serah.mp = serahStats().maxMp;
     player.kael.hp = kaelStats().maxHp; player.kael.mp = kaelStats().maxMp;
+    player.lyra.hp = lyraStats().maxHp; player.lyra.mp = lyraStats().maxMp;
     return player;
   }
-
-  // ---------- SERAH (party member) ----------
-  // her stats scale from the player's level; she has her own HP/MP pool and weapon slot
-  function serahStats() {
-    const lvl = player.level;
-    const wpn = player.serah.weapon;
-    const wDmg = wpn && wpn.dmg ? (wpn.dmg[0]+wpn.dmg[1])/2 : (6 + lvl*2);
-    return {
-      maxHp: Math.round(player.maxHp * .55),
-      maxMp: Math.round(player.maxMp * .5),
-      attack: Math.round(player.attack * .42 + wDmg),
-      defense: Math.round(player.defense * .5),
-      critChance: Math.min(.65, player.critChance * 1.25),
-      critMult: player.critMult,
-      chainMax: 3,
-    };
-  }
-
-  const SERAH_SKILLS = [
-    { id:'silver_arrow', name:'Silver Arrow', icon:'🏹', mp:6, req:0, desc:'A streak of Wingly light. 180% damage.', type:'phys', mult:1.8 },
-    { id:'wingly_light', name:'Wingly Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
-    { id:'tailwind', name:'Tailwind', icon:'🌬', mp:8, req:4, desc:'+18% dodge for the whole party, 3 turns.', type:'buff', mult:.18 },
-    { id:'starfall_shot', name:'Starfall Shot', icon:'☄', mp:18, req:8, desc:'Her deadliest arrow. 330% damage, high crit chance.', type:'phys', mult:3.3, critBonus:.25 },
-  ];
 
   // ---------- KAEL (party member — the Lancer) ----------
   // tanky spear fighter: joins after the Herald falls
@@ -200,6 +178,55 @@ const RPG = (() => {
     { id:'bulwark', name:'Bulwark', icon:'🛡', mp:9, req:0, desc:'+25% defense for the whole party, 3 turns.', type:'buff', mult:.25 },
     { id:'sweeping_arc', name:'Sweeping Arc', icon:'🌀', mp:11, req:6, desc:'A wide spear sweep. 260% damage.', type:'phys', mult:2.6, critBonus:.1 },
     { id:'dragonslayer', name:'Dragonslayer', icon:'🐲', mp:20, req:9, desc:'The sky-splitting thrust. 400% damage.', type:'phys', mult:4.0, critBonus:.2 },
+  ];
+
+  // ---------- LYRA (party member — the Pyromancer) ----------
+  // glass-cannon fire caster rescued from the Hollow Deep's cells
+  function lyraStats() {
+    const lvl = player.level;
+    if (!player.lyra) player.lyra = { hp: 0, mp: 0, weapon: null };
+    const wpn = player.lyra.weapon;
+    const wDmg = wpn && wpn.dmg ? (wpn.dmg[0]+wpn.dmg[1])/2 : (7 + lvl*2.2);
+    return {
+      maxHp: Math.round(player.maxHp * .45),
+      maxMp: Math.round(player.maxMp * .8),
+      attack: Math.round(player.attack * .38 + wDmg * 1.2),
+      defense: Math.round(player.defense * .4),
+      critChance: player.critChance,
+      critMult: player.critMult,
+      chainMax: 2,
+    };
+  }
+
+  const LYRA_SKILLS = [
+    { id:'emberbolt', name:'Emberbolt', icon:'🔥', mp:6, req:0, desc:'A bolt of prison-yard spite. 190% fire damage.', type:'fire', mult:1.9 },
+    { id:'cauterize', name:'Cauterize', icon:'🩹', mp:9, req:0, desc:'Burn the wounds shut. Heal the leader for 26% of max HP.', type:'heal', mult:.26 },
+    { id:'cinderstorm', name:'Cinderstorm', icon:'🌋', mp:14, req:5, desc:'A whirling column of ash and flame. 300% fire damage.', type:'fire', mult:3.0, critBonus:.1 },
+    { id:'immolation', name:'Immolation', icon:'💥', mp:22, req:8, desc:'Everything burns. 430% fire damage, high crit chance.', type:'fire', mult:4.3, critBonus:.25 },
+  ];
+
+  // ---------- SERAH (party member) ----------
+  // her stats scale from the player's level; she has her own HP/MP pool and weapon slot
+  function serahStats() {
+    const lvl = player.level;
+    const wpn = player.serah.weapon;
+    const wDmg = wpn && wpn.dmg ? (wpn.dmg[0]+wpn.dmg[1])/2 : (6 + lvl*2);
+    return {
+      maxHp: Math.round(player.maxHp * .55),
+      maxMp: Math.round(player.maxMp * .5),
+      attack: Math.round(player.attack * .42 + wDmg),
+      defense: Math.round(player.defense * .5),
+      critChance: Math.min(.65, player.critChance * 1.25),
+      critMult: player.critMult,
+      chainMax: 3,
+    };
+  }
+
+  const SERAH_SKILLS = [
+    { id:'silver_arrow', name:'Silver Arrow', icon:'🏹', mp:6, req:0, desc:'A streak of Wingly light. 180% damage.', type:'phys', mult:1.8 },
+    { id:'wingly_light', name:'Wingly Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
+    { id:'tailwind', name:'Tailwind', icon:'🌬', mp:8, req:4, desc:'+18% dodge for the whole party, 3 turns.', type:'buff', mult:.18 },
+    { id:'starfall_shot', name:'Starfall Shot', icon:'☄', mp:18, req:8, desc:'Her deadliest arrow. 330% damage, high crit chance.', type:'phys', mult:3.3, critBonus:.25 },
   ];
 
   function skillRank(id){ return player.skills[id] || 0; }
@@ -273,6 +300,11 @@ const RPG = (() => {
       const ks = kaelStats();
       player.kael.hp = Math.min(player.kael.hp, ks.maxHp);
       player.kael.mp = Math.min(player.kael.mp, ks.maxMp);
+    }
+    if (player.lyra) {
+      const ls = lyraStats();
+      player.lyra.hp = Math.min(player.lyra.hp, ls.maxHp);
+      player.lyra.mp = Math.min(player.lyra.mp, ls.maxMp);
     }
   }
 
@@ -359,12 +391,17 @@ const RPG = (() => {
   function load() {
     try {
       const d = localStorage.getItem('dfs_save'); if (!d) return false;
-      player = JSON.parse(d); recalc(); return true;
+      player = JSON.parse(d);
+      // migrations for older saves
+      if (!player.lyra) player.lyra = { hp: 0, mp: 0, weapon: null };
+      if (!player.kael) player.kael = { hp: 0, mp: 0, weapon: null };
+      if (!player.serah) player.serah = { hp: 0, mp: 0, weapon: null };
+      recalc(); return true;
     } catch(e){ return false; }
   }
   function hasSave(){ return !!localStorage.getItem('dfs_save'); }
 
   return { CLASSES, BASES, newPlayer, recalc, genItem, gainXp, gainGold, skillRank, getSkill,
-           save, load, hasSave, serahStats, SERAH_SKILLS, kaelStats, KAEL_SKILLS,
+           save, load, hasSave, serahStats, SERAH_SKILLS, kaelStats, KAEL_SKILLS, lyraStats, LYRA_SKILLS,
            get player(){ return player; }, set player(p){ player = p; } };
 })();
