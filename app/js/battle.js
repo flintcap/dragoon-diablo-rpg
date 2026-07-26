@@ -1,4 +1,4 @@
-/* battle.js — LOD turn-based battles: party-of-3 control, timed Additions, enemy specials, cast anims */
+/* battle.js — Legend of Dragoon-style turn-based battles with timed Addition combos */
 const Battle = (() => {
   const M = THREE;
   let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
@@ -6,6 +6,27 @@ const Battle = (() => {
   let dragoonTurns = 0, dots = [], enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
   let playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
   let ringState = null, arenaLight = null, dragoonWings = null;
+  const arenaEls = { inlays: [], flames: [], ring: null, emblem: null, floorMat: null };
+  // per-zone arena moods — every battlefield should feel like the place you fight in
+  const ARENA_THEMES = {
+    forest:  { accent: 0x3a7bd5, inlay: 0x24508a, floor: 0x59637e, ember: 0x7ec8ff },
+    town:    { accent: 0xd8a84a, inlay: 0x8a6a2a, floor: 0x5e5648, ember: 0xffdd88 },
+    coast:   { accent: 0x3ab8d8, inlay: 0x1d6a80, floor: 0x4e5e6a, ember: 0xbfe8ff },
+    grotto:  { accent: 0x3ad5c8, inlay: 0x1d7a70, floor: 0x3e4e5e, ember: 0x8a7aff },
+    dungeon: { accent: 0xd8823a, inlay: 0x7a4a1d, floor: 0x4a4440, ember: 0xffaa55 },
+    crater:  { accent: 0xd85a3a, inlay: 0x7a2a1d, floor: 0x54423e, ember: 0xff9a4d },
+    peaks:   { accent: 0x7ae8ff, inlay: 0x2a7a8a, floor: 0x4e5c72, ember: 0xd8e6ff },
+  };
+  function applyArenaTheme(zone) {
+    const t = ARENA_THEMES[zone] || ARENA_THEMES.forest;
+    if (arenaEls.ring) arenaEls.ring.material.color.setHex(t.accent);
+    for (const inl of arenaEls.inlays) inl.material.color.setHex(t.inlay);
+    if (arenaEls.emblem) arenaEls.emblem.material.color.setHex(t.inlay);
+    if (arenaEls.floorMat) arenaEls.floorMat.color.setHex(t.floor);
+    if (arenaLight) arenaLight.color.setHex(t.accent);
+    for (const f of arenaEls.flames) f.color.setHex(t.accent);
+    if (scene && scene.userData.embers) scene.userData.embers.material.color.setHex(t.ember);
+  }
   let currentActor = 'player', serahKO = false, serahDefending = false, partyDodge = 0, partyDodgeTurns = 0;
   let kaelModel = null, kaelKO = false, kaelDefending = false, partyDef = 0, partyDefTurns = 0;
 
@@ -32,15 +53,18 @@ const Battle = (() => {
     const ring = new M.Mesh(new M.TorusGeometry(11.5, .18, 8, 48),
       new M.MeshBasicMaterial({ color: 0x3a7bd5 }));
     ring.rotation.x = Math.PI/2; ring.position.y = .32; scene.add(ring);
+    arenaEls.ring = ring;
     // concentric inlays + center emblem + radial cracks
     for (const [r, col] of [[8, 0x24508a], [4.5, 0x1d4a70]]) {
       const inl = new M.Mesh(new M.TorusGeometry(r, .08, 6, 48),
         new M.MeshBasicMaterial({ color: col, transparent:true, opacity:.8 }));
       inl.rotation.x = Math.PI/2; inl.position.y = .31; scene.add(inl);
+      arenaEls.inlays.push(inl);
     }
     const emblem = new M.Mesh(new M.CircleGeometry(1.6, 24),
       new M.MeshBasicMaterial({ color: 0x2a5a9a, transparent:true, opacity:.5 }));
     emblem.rotation.x = -Math.PI/2; emblem.position.y = .31; scene.add(emblem);
+    arenaEls.emblem = emblem; arenaEls.floorMat = floorMat;
     for (let i=0;i<8;i++){
       const a = i/8*Math.PI*2 + .35;
       const crack = new M.Mesh(new M.PlaneGeometry(rnd(2,4.5), rnd(.06,.14)),
@@ -66,6 +90,7 @@ const Battle = (() => {
       pil.position.set(Math.cos(a)*15, h/2 - .3, Math.sin(a)*15); scene.add(pil);
       const flame = new M.PointLight(0x3a7bd5, .8, 12);
       flame.position.set(Math.cos(a)*15, 5, Math.sin(a)*15); scene.add(flame);
+      arenaEls.flames.push(flame);
     }
     // embers
     const geo = new M.BufferGeometry(); const n = 120; const pts = new Float32Array(n*3);
@@ -79,6 +104,7 @@ const Battle = (() => {
   // ---------- START / END ----------
   function start(worldEnemy) {
     if (!scene) buildScene();
+    applyArenaTheme(typeof World !== 'undefined' ? World.zone : 'forest');
     active = true; enemy = worldEnemy;
     dots = []; enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
     playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
@@ -729,6 +755,25 @@ const Battle = (() => {
   async function specialAttack() {
     const p = RPG.player;
     const kind = enemy.kind || 'humanoid';
+    if (enemy.bossId === 'stormcaller') {
+      banner('⛈ CHAIN LIGHTNING ⛈');
+      log(`${enemy.name} calls the whole storm down on the party!`);
+      AudioSys.play('lightning');
+      const flash = new M.PointLight(0xcfe4ff, 4, 60); flash.position.set(0, 14, 0); scene.add(flash);
+      shake(1.2);
+      await wait(200);
+      const targets = ['player'];
+      if (!serahKO) targets.push('serah');
+      if (kaelModel && !kaelKO) targets.push('kael');
+      for (const tgt of targets) {
+        await projectileFX(enemyModel, targetInfo(tgt).model, 0x9ad4ff);
+        AudioSys.play('lightning');
+        await damageAlly(tgt, enemy.dmg * .7, 'electrocutes');
+      }
+      scene.remove(flash);
+      AudioSys.play('thunder');
+      return;
+    }
     if (kind === 'wolf') {
       const tgt = pickTarget();
       banner('🐺 SAVAGE BITE 🐺');
@@ -804,7 +849,7 @@ const Battle = (() => {
       if (enemy.phase2 && !enemy.phase2Done && enemy.hpCur < enemy.maxHp * .5) {
         enemy.phase2Done = true;
         enemy.dmg = Math.round(enemy.dmg * enemy.phase2.dmgMult);
-        enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct);
+        enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct));
         banner(enemy.phase2.name);
         AudioSys.play('dragoon');
         enemyModel.group.traverse(o => { if (o.material && o.material.emissive !== undefined) { o.material.emissive = new M.Color(enemy.phase2.color); o.material.emissiveIntensity = .8; } });
