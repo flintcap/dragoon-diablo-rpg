@@ -204,6 +204,16 @@ const Main = (() => {
         list.push({ id:o.id, x:o.x, z:o.z, col:o.col, label:o.label, kind:o.kind, onUse:o.onUse });
       }
     }
+    // Kael the wounded lancer — appears at the shrine after the Herald falls
+    if (zone === 'forest' && F('heraldDead') && !F('kaelJoined')) {
+      list.push({ id:'kael_rescue', x:-8, z:6, col:0xd4a24a, label:'Aid the wounded lancer', kind:'pickup',
+        onUse: () => {
+          Fset('kaelJoined');
+          World.removeInteract('kael_rescue');
+          AudioSys.play('victory');
+          toast('🛡 <b>Kael the Lancer joins the party!</b><br><small>"You broke the Herald. My spear is yours — he fights beside you in battle now."</small>');
+        } });
+    }
     const sig = zone + '|' + list.map(l=>l.id).join(',');
     if (force || sig !== objSig) { objSig = sig; World.syncQuestObjects(list); }
   }
@@ -458,7 +468,7 @@ const Main = (() => {
       <div style="color:var(--dim);font-size:11px">${item.rarity.toUpperCase()} ${item.slot.toUpperCase()} · ilvl ${item.level}</div>
       ${base}${item.affixes.map(a=>`<div class="tt-affix">${affixText(a)}</div>`).join('')}
       ${cmp}
-      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}${item.slot==='weapon'?' · Shift+Click → Serah':''}</div>`;
+      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}${item.slot==='weapon'?' · Shift→Serah · Ctrl→Kael':''}</div>`;
     tip.classList.remove('hidden');
     tip.style.left = Math.min(innerWidth-290, e.clientX+14) + 'px';
     tip.style.top = Math.max(8, e.clientY-10) + 'px';
@@ -468,10 +478,10 @@ const Main = (() => {
     const slots = ['weapon','armor','helm','boots','amulet','ring1','ring2','charm'];
     const labels = { weapon:'Weapon', armor:'Armor', helm:'Helm', boots:'Boots', amulet:'Amulet', ring1:'Ring', ring2:'Ring', charm:'Charm' };
     const wrap = ui('equip-slots'); wrap.innerHTML = '';
-    for (const s of slots.concat(['serahWeapon'])) {
+    for (const s of slots.concat(['serahWeapon','kaelWeapon'])) {
       const d = document.createElement('div'); d.className = 'equip-slot';
-      const it = s === 'serahWeapon' ? p.serah.weapon : p.equip[s];
-      d.innerHTML = `${s==='serahWeapon'?'🏹 Serah':labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
+      const it = s === 'serahWeapon' ? p.serah.weapon : s === 'kaelWeapon' ? p.kael.weapon : p.equip[s];
+      d.innerHTML = `${s==='serahWeapon'?'🏹 Serah':s==='kaelWeapon'?'🔱 Kael':labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
       if (it) {
         d.style.borderStyle = 'solid';
         d.onmouseenter = e => itemTooltip(it, e, true);
@@ -480,7 +490,9 @@ const Main = (() => {
         d.onclick = () => {
           if (p.inventory.length >= 24) { toast('Backpack full!'); return; }
           p.inventory.push(it);
-          if (s === 'serahWeapon') p.serah.weapon = null; else p.equip[s] = null;
+          if (s === 'serahWeapon') p.serah.weapon = null;
+          else if (s === 'kaelWeapon') p.kael.weapon = null;
+          else p.equip[s] = null;
           RPG.recalc(); AudioSys.play('click'); UI.refreshInv(); renderCharSheet();
           if (World.refreshPlayerGear) World.refreshPlayerGear();
         };
@@ -504,6 +516,12 @@ const Main = (() => {
           p.serah.weapon = it; p.inventory.splice(idx, 1);
           if (oldS) p.inventory.push(oldS);
           toast(`Serah equips <b class="rarity-${it.rarity}">${it.name}</b>`);
+        } else if ((ev.ctrlKey || ev.altKey) && it.slot === 'weapon') {
+          if (!F('kaelJoined')) { toast('No lancer in the party yet — rescue him at the shrine.'); return; }
+          const oldK = p.kael.weapon;
+          p.kael.weapon = it; p.inventory.splice(idx, 1);
+          if (oldK) p.inventory.push(oldK);
+          toast(`Kael equips <b class="rarity-${it.rarity}">${it.name}</b>`);
         } else {
           const slot = it.slot === 'ring' ? (p.equip.ring1 ? (p.equip.ring2 ? 'ring1' : 'ring2') : 'ring1') : it.slot;
           const old = p.equip[slot];
@@ -675,6 +693,7 @@ const Main = (() => {
     town: { act: 'SAFE HAVEN', name: 'MIREWOOD HOLLOW' },
     grotto: { act: 'BENEATH THE SHRINE', name: 'THE SUNKEN GROTTO' },
     crater: { act: 'THE END OF ACT I', name: 'THE STAR CRATER' },
+    coast: { act: 'ACT I — SHORELINE', name: 'EMBERSTRAND COAST' },
   };
   function showZoneTitle(zone) {
     const m = ZONE_META[zone]; if (!m) return;
