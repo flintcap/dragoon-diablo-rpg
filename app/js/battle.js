@@ -1224,6 +1224,22 @@ const Battle = (() => {
     if (r.sword) r.body.remove(r.sword);
     const w = World.buildWeaponMesh ? World.buildWeaponMesh(World.currentWeaponType()) : null;
     if (w) { w.position.set(.6, 1.15, 0); w.rotation.z = -.4; r.body.add(w); r.sword = w; }
+    // carry armor pieces into battle: shield, tiered helm, amulet gem
+    const eq = RPG.player.equip;
+    if (eq.armor && eq.armor.def >= 8 && World.buildShieldMesh) {
+      const sh = World.buildShieldMesh(eq.armor.rarity);
+      sh.position.set(-.62, 1.15, .1); r.body.add(sh);
+    }
+    if (eq.helm && World.buildHelmMesh) {
+      const hm = World.buildHelmMesh(eq.helm.name, eq.helm.rarity);
+      r.body.add(hm);
+    }
+    if (eq.amulet) {
+      const col = { normal:0xc8c8c8, magic:0x6b8cff, rare:0xffe14d, unique:0xd08028 }[eq.amulet.rarity];
+      const gem = new M.Mesh(new M.OctahedronGeometry(.09, 0),
+        new M.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.2 }));
+      gem.position.set(0, 1.42, .3); r.body.add(gem);
+    }
     return r;
   }
   function buildRig(color, isEnemy, scale, isAlly=false) {
