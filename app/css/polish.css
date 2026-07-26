@@ -1,7 +1,68 @@
 
+/* ---------- BOSS BAR ---------- */
+#boss-bar { position:absolute; bottom:64px; left:50%; transform:translateX(-50%); width:min(520px,60vw); text-align:center; }
+#boss-name { font-size:15px; letter-spacing:5px; color:#ff8877; text-shadow:0 2px 6px #000; margin-bottom:4px; }
+#boss-track { height:12px; background:#05070cd0; border:1px solid #5c1a1a; border-radius:6px; overflow:hidden; box-shadow:0 0 14px rgba(160,18,24,.4), inset 0 2px 4px #000; }
+#boss-fill { height:100%; width:100%; background:linear-gradient(180deg,#ff5a4d,#8a0f14 60%,#4a0508); transition:width .3s ease; }
+
+/* ---------- ZONE TITLE ---------- */
+#zone-title { position:fixed; top:34%; left:0; right:0; z-index:35; text-align:center; pointer-events:none; }
+#zone-title-act { font-size:14px; letter-spacing:10px; color:var(--lod-ice); text-shadow:0 2px 8px #000; }
+#zone-title-name { font-size:44px; letter-spacing:8px; color:var(--gold); text-shadow:0 0 30px rgba(212,175,55,.6), 0 4px 8px #000; }
+#zone-title.show { animation:zoneTitle 3s ease forwards; }
+@keyframes zoneTitle { 0%{opacity:0; transform:scale(.94);} 15%{opacity:1; transform:scale(1);} 75%{opacity:1;} 100%{opacity:0;} }
+
+/* ---------- FADE ---------- */
+#fade-overlay { position:fixed; inset:0; z-index:60; background:#04060c; opacity:0; pointer-events:none; transition:opacity .35s ease; }
+#fade-overlay.on { opacity:1; }
+
+/* ---------- SKILL TREE CONNECTORS ---------- */
+.tree-branch { position:relative; }
+.tree-branch::before { content:''; position:absolute; left:50%; top:70px; bottom:36px; width:2px;
+  background:linear-gradient(180deg, transparent, var(--panel-edge) 15%, var(--panel-edge) 85%, transparent); }
+.skill-node { z-index:1; }
+
+/* ---------- TOOLTIP COMPARE ---------- */
+#item-tooltip .tt-cmp { margin-top:8px; padding-top:8px; border-top:1px solid #1c2946; }
+#item-tooltip .tt-cmp-title { color:var(--dim); font-size:11px; letter-spacing:1px; margin-bottom:3px; }
+#item-tooltip .tt-better { color:#6fcf97; }
+#item-tooltip .tt-worse { color:#ff6655; }
+
+/* portrait glyph */
+#portrait-face { display:flex; align-items:center; justify-content:center; font-size:30px;
+  text-shadow:0 0 10px rgba(0,0,0,.8); }
+
+/* ---------- SERAH BARS ---------- */
+#serah-bars { position:absolute; top:96px; left:18px; display:flex; align-items:center; gap:8px; }
+.serah-label { font-size:11px; letter-spacing:2px; color:var(--lod-ice); text-shadow:0 1px 3px #000; }
+#serah-bars .bar { width:110px; height:8px; margin-top:0; }
+.serah-hp-bar div { background:linear-gradient(180deg,#7ec8ff,#2a6a9e 60%,#12304a); height:100%; transition:width .25s; }
+.serah-mp-bar div { background:linear-gradient(180deg,#c08aff,#6a3a9e 60%,#2a124a); height:100%; transition:width .25s; }
+
 /* ---------- KAEL BARS ---------- */
 #kael-bars { position:absolute; top:118px; left:18px; display:flex; align-items:center; gap:8px; }
 .kael-label { font-size:11px; letter-spacing:2px; color:#ffd97a; text-shadow:0 1px 3px #000; }
 #kael-bars .bar { width:110px; height:8px; margin-top:0; }
 .kael-hp-bar div { background:linear-gradient(180deg,#ffd97a,#a06a1a 60%,#4a2a05); height:100%; transition:width .25s; }
 .kael-mp-bar div { background:linear-gradient(180deg,#c08aff,#6a3a9e 60%,#2a124a); height:100%; transition:width .25s; }
+
+/* ---------- DIALOGUE & SHOP ---------- */
+.dlg-panel { width:min(520px, 90vw); }
+#dlg-role { color:var(--lod-ice); font-size:12px; letter-spacing:2px; margin:-8px 0 10px; }
+#dlg-text { font-size:15px; line-height:1.7; min-height:66px; color:var(--text); font-style:italic;
+  border-left:3px solid var(--lod-blue); padding-left:14px; margin-bottom:16px; }
+#dlg-buttons { display:flex; gap:10px; justify-content:flex-end; }
+#shop-tabs { display:flex; gap:8px; margin-bottom:14px; }
+.shop-tab { padding:8px 28px; background:#0d1424; border:1px solid var(--panel-edge); color:var(--dim);
+  font-size:14px; letter-spacing:2px; border-radius:4px 4px 0 0; }
+.shop-tab.active { color:var(--gold-hi); border-color:var(--gold); background:#16213c; }
+#shop-gold { color:var(--gold-hi); font-size:15px; }
+.shop-row { display:flex; align-items:center; gap:14px; padding:10px 14px; margin-bottom:6px;
+  background:#0d1424; border:1px solid #1c2946; border-radius:5px; }
+.shop-row:hover { border-color:var(--lod-blue); }
+.shop-row .sr-icon { font-size:24px; }
+.shop-row .sr-name { flex:1; font-size:14px; }
+.shop-row .sr-desc { color:var(--dim); font-size:11.5px; display:block; }
+.shop-row .sr-price { color:var(--gold-hi); font-size:14px; min-width:70px; text-align:right; }
+.shop-row button { padding:7px 18px; font-size:13px; }
+.shop-row .sr-price.cant { color:#ff6655; }
