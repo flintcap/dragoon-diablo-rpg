@@ -1,4 +1,4 @@
-/* textures.js — procedural canvas texture factory (grass, dirt, stone, wood, shingle, plaster, water, ash) */
+/* textures.js — procedural canvas texture factory (grass, dirt, stone, wood, shingle, plaster, water, ash, sand) */
 const TexFactory = (() => {
   const cache = {};
   function mk(size, painter) {
@@ -92,6 +92,12 @@ const TexFactory = (() => {
         ctx.stroke();
       }
       speckle(ctx, s, '#0a2a3e', 200, .04, 2);
+    });
+    T.sand = mk(128, (ctx,s) => {
+      ctx.fillStyle = '#3a3222'; ctx.fillRect(0,0,s,s);
+      speckle(ctx, s, '#5a4e38', 900, .03, 3);
+      speckle(ctx, s, '#3a3020', 500, .03, 2);
+      speckle(ctx, s, '#6a5c42', 200, .04, 2);
     });
     T.ash = mk(128, (ctx,s) => {
       ctx.fillStyle = '#181010'; ctx.fillRect(0,0,s,s);
