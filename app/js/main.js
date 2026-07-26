@@ -235,6 +235,17 @@ const Main = (() => {
           toast('🛡 <b>Kael the Lancer joins the party!</b><br><small>"You broke the Herald. My spear is yours — he fights beside you in battle now."</small>');
         } });
     }
+    // Lyra the Pyromancer — locked in a Hollow Deep cell; free her once the Warden is dead
+    if (zone === 'dungeon' && F('wardenDead') && !F('lyraJoined')) {
+      list.push({ id:'lyra_rescue', x:-24, z:-30, col:0xff8a3a, label:'Break the rusted cell lock', kind:'pickup',
+        onUse: () => {
+          Fset('lyraJoined');
+          World.removeInteract('lyra_rescue');
+          AudioSys.play('victory');
+          toast('🔥 <b>Lyra the Pyromancer joins the party!</b><br><small>"Three years in that cage. Three years of practicing on rats. Point me at something worth burning." — she takes her own turn in battle now.</small>');
+          World.spawnAmbush(2); // the Warden's remaining guards come running
+        } });
+    }
     // Storm Sigils — three attunement pillars along the Stormpeak climb
     if (zone === 'peaks' && !F('stormcallerDead')) {
       const sigilDefs = [
@@ -512,7 +523,7 @@ const Main = (() => {
       <div style="color:var(--dim);font-size:11px">${item.rarity.toUpperCase()} ${item.slot.toUpperCase()} · ilvl ${item.level}</div>
       ${base}${item.affixes.map(a=>`<div class="tt-affix">${affixText(a)}</div>`).join('')}
       ${cmp}
-      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}${item.slot==='weapon'?' · Shift→Serah · Ctrl→Kael':''}</div>`;
+      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}${item.slot==='weapon'?' · Shift→Serah · Ctrl→Kael · Alt→Lyra':''}</div>`;
     tip.classList.remove('hidden');
     tip.style.left = Math.min(innerWidth-290, e.clientX+14) + 'px';
     tip.style.top = Math.max(8, e.clientY-10) + 'px';
@@ -522,10 +533,10 @@ const Main = (() => {
     const slots = ['weapon','armor','helm','boots','amulet','ring1','ring2','charm'];
     const labels = { weapon:'Weapon', armor:'Armor', helm:'Helm', boots:'Boots', amulet:'Amulet', ring1:'Ring', ring2:'Ring', charm:'Charm' };
     const wrap = ui('equip-slots'); wrap.innerHTML = '';
-    for (const s of slots.concat(['serahWeapon','kaelWeapon'])) {
+    for (const s of slots.concat(['serahWeapon','kaelWeapon','lyraWeapon'])) {
       const d = document.createElement('div'); d.className = 'equip-slot';
-      const it = s === 'serahWeapon' ? p.serah.weapon : s === 'kaelWeapon' ? p.kael.weapon : p.equip[s];
-      d.innerHTML = `${s==='serahWeapon'?'🏹 Serah':s==='kaelWeapon'?'🔱 Kael':labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
+      const it = s === 'serahWeapon' ? p.serah.weapon : s === 'kaelWeapon' ? p.kael.weapon : s === 'lyraWeapon' ? p.lyra.weapon : p.equip[s];
+      d.innerHTML = `${s==='serahWeapon'?'🏹 Serah':s==='kaelWeapon'?'🔱 Kael':s==='lyraWeapon'?'🔥 Lyra':labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
       if (it) {
         d.style.borderStyle = 'solid';
         d.onmouseenter = e => itemTooltip(it, e, true);
@@ -536,6 +547,7 @@ const Main = (() => {
           p.inventory.push(it);
           if (s === 'serahWeapon') p.serah.weapon = null;
           else if (s === 'kaelWeapon') p.kael.weapon = null;
+          else if (s === 'lyraWeapon') p.lyra.weapon = null;
           else p.equip[s] = null;
           RPG.recalc(); AudioSys.play('click'); UI.refreshInv(); renderCharSheet();
           if (World.refreshPlayerGear) World.refreshPlayerGear();
@@ -560,12 +572,18 @@ const Main = (() => {
           p.serah.weapon = it; p.inventory.splice(idx, 1);
           if (oldS) p.inventory.push(oldS);
           toast(`Serah equips <b class="rarity-${it.rarity}">${it.name}</b>`);
-        } else if ((ev.ctrlKey || ev.altKey) && it.slot === 'weapon') {
+        } else if (ev.ctrlKey && it.slot === 'weapon') {
           if (!F('kaelJoined')) { toast('No lancer in the party yet — rescue him at the shrine.'); return; }
           const oldK = p.kael.weapon;
           p.kael.weapon = it; p.inventory.splice(idx, 1);
           if (oldK) p.inventory.push(oldK);
           toast(`Kael equips <b class="rarity-${it.rarity}">${it.name}</b>`);
+        } else if (ev.altKey && it.slot === 'weapon') {
+          if (!F('lyraJoined')) { toast('No pyromancer in the party yet — free her from the Hollow Deep cells.'); return; }
+          const oldL = p.lyra.weapon;
+          p.lyra.weapon = it; p.inventory.splice(idx, 1);
+          if (oldL) p.inventory.push(oldL);
+          toast(`Lyra equips <b class="rarity-${it.rarity}">${it.name}</b>`);
         } else {
           const slot = it.slot === 'ring' ? (p.equip.ring1 ? (p.equip.ring2 ? 'ring1' : 'ring2') : 'ring1') : it.slot;
           const old = p.equip[slot];
