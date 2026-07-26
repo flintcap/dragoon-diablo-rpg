@@ -1,4 +1,4 @@
-/* textures.js — procedural canvas texture factory (grass, dirt, stone, wood, shingle, plaster, water, ash, sand) */
+/* textures.js — procedural canvas texture factory (grass, dirt, stone, wood, shingle, plaster, water) */
 const TexFactory = (() => {
   const cache = {};
   function mk(size, painter) {
@@ -104,6 +104,19 @@ const TexFactory = (() => {
       speckle(ctx, s, '#241614', 700, .03, 3);
       speckle(ctx, s, '#0e0808', 400, .03, 2);
       speckle(ctx, s, '#3a1e12', 120, .04, 3);
+    });
+    T.snow = mk(128, (ctx,s) => {
+      ctx.fillStyle = '#1c2431'; ctx.fillRect(0,0,s,s);
+      speckle(ctx, s, '#283244', 800, .03, 3);
+      speckle(ctx, s, '#141a24', 500, .03, 2);
+      speckle(ctx, s, '#3c4a5e', 240, .04, 2);   // wind-packed drifts
+      speckle(ctx, s, '#7a8caa', 50, .05, 1);    // ice glints
+    });
+    T.iceRock = mk(128, (ctx,s) => {
+      ctx.fillStyle = '#1c2230'; ctx.fillRect(0,0,s,s);
+      speckle(ctx, s, '#2a3242', 700, .03, 4);
+      speckle(ctx, s, '#12161e', 500, .03, 3);
+      speckle(ctx, s, '#3e4c62', 220, .04, 3);
     });
     return T;
   }

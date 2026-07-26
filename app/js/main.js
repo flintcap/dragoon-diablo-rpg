@@ -1,4 +1,4 @@
-/* main.js — bootstrap, state machine, quest engine, NPC dialogue, shops, all UI wiring */
+/* main.js — bootstrap, state machine, quest engine, all UI wiring */
 const Main = (() => {
   let state = 'title'; // title | world | battle | paused
   let lastT = performance.now();
@@ -121,6 +121,10 @@ const Main = (() => {
       text:'Greed keeps you alive out here. Pick up 6 items.',
       prog:()=>[Math.min(6,Fget('itemsFound')),6],
       rewards:{ gold:80, potions:2 } },
+    { id:'s3', title:'Echoes of the Storm',
+      text:'With the Star destroyed, a forbidden path opens: Stormpeak Ascent, where the tempest is said to be alive. Attune the three Storm Sigils along the climb, then face whatever answers at the summit shrine. (Portal in the northeast Whisperwood — open only to the slayer of Melbu.)',
+      prog:()=>[Math.min(3,Fget('sigils')) + (F('stormcallerDead')?1:0), 4],
+      rewards:{ xp:800, gold:600, item:'unique' } },
   ];
 
   // ---- quest object mechanics ----
@@ -137,6 +141,13 @@ const Main = (() => {
       Fset('attuned', 0);
       AudioSys.play('miss');
       toast('The crystals flare, then dim — <b>wrong order, the trial resets</b>.<br><small><i>"First the STAR… then the MOON… last the EMBER."</i></small>');
+      // respawn already-attuned crystals
+      for (const cid of ATTUNE_ORDER) {
+        if (cid !== id) {
+          const q = MAIN_QUESTS[1].objects.find(o => o.id === cid);
+          if (q && !World.nearInteract()) { /* re-add below via resync */ }
+        }
+      }
       resyncObjects(true);
     }
   }
@@ -154,6 +165,16 @@ const Main = (() => {
     toast(`✦ Drowned Relic recovered (${Fget('relics')}/4)`);
     if (Math.random() < .5) World.spawnAmbush(1);
     if (Fget('relics') >= 4) toast('⚠ The lair empties… <b>the Tyrant surfaces!</b>', 'var(--blood)');
+  }
+  function takeSigil(id) {
+    Fset('sigils', Fget('sigils')+1);
+    Fset('taken_' + id);
+    World.removeInteract(id);
+    AudioSys.play('lightning');
+    toast(`⛈ <b>Storm Sigil attuned</b> (${Fget('sigils')}/3) — the wind screams louder.`);
+    World.spawnAmbush(1);
+    if (Fget('sigils') >= 3) setTimeout(() =>
+      toast('⛈ The storm breaks open above the <b>summit shrine</b> — something is waiting there now.', 'var(--blood)'), 900);
   }
 
   // ---- engine ----
@@ -213,6 +234,19 @@ const Main = (() => {
           AudioSys.play('victory');
           toast('🛡 <b>Kael the Lancer joins the party!</b><br><small>"You broke the Herald. My spear is yours — he fights beside you in battle now."</small>');
         } });
+    }
+    // Storm Sigils — three attunement pillars along the Stormpeak climb
+    if (zone === 'peaks' && !F('stormcallerDead')) {
+      const sigilDefs = [
+        { id:'sigil_1', x:-18, z: 10 },
+        { id:'sigil_2', x: 16, z:-12 },
+        { id:'sigil_3', x:-10, z:-22 },
+      ];
+      for (const d of sigilDefs) {
+        if (F('taken_' + d.id)) continue; // attuned pillars stay gone
+        list.push({ id:d.id, x:d.x, z:d.z, col:0x7ae8ff, label:'Attune the Storm Sigil', kind:'pickup',
+          onUse: () => takeSigil(d.id) });
+      }
     }
     const sig = zone + '|' + list.map(l=>l.id).join(',');
     if (force || sig !== objSig) { objSig = sig; World.syncQuestObjects(list); }
@@ -318,6 +352,16 @@ const Main = (() => {
       AudioSys.play('victory');
       ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
     },
+    stormVictory() { // Stormcaller down
+      ui('results-title').textContent = '⛈ THE STORM BREAKS ⛈';
+      ui('results-title').classList.remove('defeat');
+      ui('results-body').innerHTML =
+        `<div>The Stormcaller collapses into scattering sleet. For the first time in a hundred years, the summit is silent.</div>
+         <div style="color:var(--lod-ice);font-size:14px;margin-top:8px">In the obelisk's heart, something frozen solid gleams — a storm-touched <b>unique</b> lies in the snow.</div>`;
+      ui('results-screen').classList.remove('hidden');
+      AudioSys.play('victory');
+      ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
+    },
     actComplete() { // Melbu down — ACT I COMPLETE
       ui('results-title').textContent = '🌟 ACT I COMPLETE 🌟';
       ui('results-title').classList.remove('defeat');
@@ -333,7 +377,7 @@ const Main = (() => {
   };
 
   // ============================================================
-  //  HOTBAR / PANELS
+  //  HOTBAR / PANELS (unchanged systems)
   // ============================================================
   function buildHotbar() {
     const hb = ui('hotbar'); hb.innerHTML = '';
@@ -695,6 +739,7 @@ const Main = (() => {
     crater: { act: 'THE END OF ACT I', name: 'THE STAR CRATER' },
     coast: { act: 'ACT I — SHORELINE', name: 'EMBERSTRAND COAST' },
     dungeon: { act: 'BENEATH THE GROTTO', name: 'THE HOLLOW DEEP' },
+    peaks: { act: 'AFTERMATH OF ACT I', name: 'STORMPEAK ASCENT' },
   };
   function showZoneTitle(zone) {
     const m = ZONE_META[zone]; if (!m) return;

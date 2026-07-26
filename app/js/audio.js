@@ -43,6 +43,8 @@ const AudioSys = (() => {
     fire(){ noise(.4,.35,0,1600); tone(90,.4,'sawtooth',.3,0,null,40); },
     ice(){ tone(1800,.3,'sine',.2,0,null,400); noise(.25,.2,0,3000,'highpass'); },
     lightning(){ noise(.15,.5,0,4000,'highpass'); tone(2000,.12,'square',.3,0,null,200); },
+    thunder(){ noise(1.4,.6,0,220); noise(.5,.45,0,500); tone(55,1.1,'sine',.5,0,null,30); },
+    windGust(){ noise(1.2,.16,0,700,'bandpass'); noise(.9,.1,.2,500,'bandpass'); },
     dragoon(){ tone(110,.9,'sawtooth',.4,0,null,440); tone(220,.9,'sawtooth',.3,.15,null,880); noise(.8,.3,0,800); },
     levelup(){ [523,659,784,1046].forEach((f,i)=>tone(f,.35,'triangle',.3,i*.12)); },
     loot(){ tone(987,.12,'sine',.25); tone(1318,.2,'sine',.22,.09); },
