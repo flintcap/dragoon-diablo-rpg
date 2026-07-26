@@ -62,3 +62,12 @@ on boots, glowing amulet gems, golden rotating unique-item aura + pulsing light,
 removal on unequip, battle-rig carry-over for shield/helm/amulet. Differs from prior: first
 pass where EVERY equipment slot has a live on-character visual; first aura effect. Run
 logged at verifier/runs/2026-07-27-gear-depth.md — all PASS, Act-I regression green.
+
+## v8 — 2026-07-27
+Measures: Mirewood Bounty Board — physical town quest board, 3 rotating contracts
+(kill-family / elite / salvage-items), accept/track via new per-kind kill counters,
+one-time completion ping, CLAIM REWARD (gold + magic item) with fresh offers posted.
+Caught & fixed: F() boolean coercion breaking offers render; pre-existing 12s respawn
+timer crashing after travel to enemy-less zones. Differs from prior: first repeatable
+side-content system; first contracts tracked through generic counters. Run logged at
+verifier/runs/2026-07-27-bounty-board.md — all PASS, Act-I regression green.
