@@ -1,7 +1,7 @@
-/* game.js — overworld engine: zones, player, enemies, elites, camera, loot, minimap, portals */
+/* game.js — overworld engine: zones, town, player, enemies, elites, camera, loot, minimap, portals, NPCs */
 const World = (() => {
   let renderer, scene, camera, player3d, clock;
-  let enemies = [], lootDrops = [], props = [], particles = null, portals = [], interactables = []; let grottoBossSpawnedFlag = false;
+  let enemies = [], lootDrops = [], props = [], particles = null, portals = [], interactables = [], npcs = [], houses = []; let grottoBossSpawnedFlag = false;
   let keys = {}, mouseDown = false, camYaw = 0.6, camPitch = 0.62;
   const CAM_DIST = 12;
   const WORLD_R = 70;
@@ -34,6 +34,15 @@ const World = (() => {
         { name:'Fallen Knight', kind:'humanoid', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
       ],
       enemyCount: 14, levelMod: 0,
+    },
+    town: {
+      name: 'Mirewood Hollow',
+      bg: 0x0a0e12, fog: [0x0c1016, 0.012], ground: 0x142016,
+      ambient: [0x2a3040, 0.7], hemi: [0x3a4a5c, 0x0c1008, 0.35],
+      moon: [0x9db8ff, 0.85], rim: [0xffc46a, 0.45],
+      sky: true, trees: 24, treePalette: 0x12261a, rocks: 10, crystals: 0,
+      ruins: false, fireflies: [0xffdd88, 120],
+      enemies: [], enemyCount: 0, levelMod: 0, town: true,
     },
     grotto: {
       name: 'The Sunken Grotto',
@@ -96,7 +105,7 @@ const World = (() => {
     scene = new M.Scene();
     scene.background = new M.Color(Z.bg);
     scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1]);
-    enemies = []; lootDrops = []; props = []; portals = []; interactables = [];
+    enemies = []; lootDrops = []; props = []; portals = []; interactables = []; npcs = []; houses = [];
 
     const moon = new M.DirectionalLight(Z.moon[0], Z.moon[1]);
     moon.position.set(-30, 50, 20); moon.castShadow = true;
@@ -112,6 +121,7 @@ const World = (() => {
     buildGround(Z);
     if (Z.sky) buildSky();
     if (Z.trees) buildForest(Z);
+    if (zoneId === 'town') buildTown(Z);
     if (zoneId === 'grotto') buildGrotto(Z);
     if (zoneId === 'crater') buildCrater(Z);
     if (Z.ruins) buildRuins();
@@ -128,7 +138,12 @@ const World = (() => {
 
   function buildGround(Z) {
     const geo = new M.CircleGeometry(WORLD_R + 30, 64);
-    const ground = new M.Mesh(geo, mat(Z.ground, 1, 0));
+    const gmat = mat(Z.ground, 1, 0);
+    // procedural ground texture
+    const gtex = (currentZone === 'forest' || currentZone === 'town') ? 'grass'
+      : currentZone === 'grotto' ? 'stoneBrick' : 'ash';
+    if (typeof TexFactory !== 'undefined') TexFactory.apply(gmat, gtex, 24, 24);
+    const ground = new M.Mesh(geo, gmat);
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
     for (let i=0;i<90;i++){
       const r = rnd(1.5, 5), p = randInCircle(WORLD_R+20);
@@ -137,7 +152,9 @@ const World = (() => {
       patch.rotation.x = -Math.PI/2; patch.position.set(p.x, 0.01 + Math.random()*0.02, p.z);
       patch.receiveShadow = true; scene.add(patch);
     }
-    if (currentZone === 'forest') {
+    if (currentZone === 'town') {
+      // town ground detail handled by dirt paths in buildTown
+    } else if (currentZone === 'forest') {
       for (let d=8; d<WORLD_R; d+=2.4){
         const a = Math.PI/4;
         const stone = new M.Mesh(new M.CylinderGeometry(rnd(.4,.6), rnd(.5,.7), .1, 6), mat(0x1f2531, .95, .02));
@@ -228,6 +245,167 @@ const World = (() => {
         leaf.position.set(p.x, rnd(8, 13), p.z);
       }
     }
+  }
+
+  // ---------- TOWN ----------
+  function texMat(tex, rx, ry, opts={}) {
+    const m = new M.MeshStandardMaterial({ color: 0xffffff, roughness: opts.rough ?? .9, metalness: opts.metal ?? .02 });
+    if (typeof TexFactory !== 'undefined') TexFactory.apply(m, tex, rx, ry);
+    if (opts.emissive) { m.emissive = new M.Color(opts.emissive); m.emissiveIntensity = opts.eInt ?? 1; }
+    return m;
+  }
+  function buildHouse(x, z, rot, w, d, hgt) {
+    const g = new M.Group();
+    const walls = new M.Mesh(new M.BoxGeometry(w, hgt, d), texMat('plaster', 2, 1.5));
+    walls.position.y = hgt/2; walls.castShadow = walls.receiveShadow = true; g.add(walls);
+    const roof = new M.Mesh(new M.ConeGeometry(Math.max(w,d)*.78, hgt*.85, 4), texMat('shingle', 3, 2));
+    roof.position.y = hgt + hgt*.42; roof.rotation.y = Math.PI/4; roof.castShadow = true; g.add(roof);
+    const door = new M.Mesh(new M.BoxGeometry(w*.22, hgt*.55, .12), texMat('wood', 1, 1.2));
+    door.position.set(0, hgt*.27, d/2 + .03); g.add(door);
+    for (const side of [-1,1]) {
+      const win = new M.Mesh(new M.PlaneGeometry(w*.2, hgt*.28),
+        new M.MeshBasicMaterial({ color: 0xffc46a }));
+      win.position.set(side*w*.3, hgt*.55, d/2 + .02); g.add(win);
+      const beam = new M.Mesh(new M.BoxGeometry(.18, hgt, .18), texMat('wood', 1, 2));
+      beam.position.set(side*(w/2-.05), hgt/2, d/2 - .05); g.add(beam);
+    }
+    const chim = new M.Mesh(new M.BoxGeometry(.35, hgt*.8, .35), texMat('stoneBrick', 1, 1.5));
+    chim.position.set(w*.28, hgt + hgt*.5, -d*.15); chim.castShadow = true; g.add(chim);
+    g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g);
+    houses.push({ x, z });
+    props.push({ x, z, r: Math.max(w,d)*.75 });
+    return g;
+  }
+  function buildLamp(x, z) {
+    const g = new M.Group();
+    const pole = new M.Mesh(new M.CylinderGeometry(.07, .1, 3, 6), texMat('wood', 1, 2));
+    pole.position.y = 1.5; pole.castShadow = true; g.add(pole);
+    const cage = new M.Mesh(new M.BoxGeometry(.34, .42, .34),
+      new M.MeshBasicMaterial({ color: 0xffdd88 }));
+    cage.position.y = 3.1; g.add(cage);
+    const l = new M.PointLight(0xffc46a, 1.2, 12); l.position.y = 3.2; g.add(l);
+    g.position.set(x, 0, z); scene.add(g);
+    props.push({ x, z, r: .3 });
+  }
+  function buildWell(x, z) {
+    const g = new M.Group();
+    const ring = new M.Mesh(new M.CylinderGeometry(1, 1.1, .9, 10), texMat('stoneBrick', 4, 1));
+    ring.position.y = .45; ring.castShadow = true; g.add(ring);
+    for (const side of [-1,1]) {
+      const post = new M.Mesh(new M.CylinderGeometry(.06,.08,1.8,5), texMat('wood', 1, 2));
+      post.position.set(side*.85, 1.4, 0); g.add(post);
+    }
+    const wroof = new M.Mesh(new M.ConeGeometry(1.2, .8, 4), texMat('shingle', 2, 1.5));
+    wroof.position.y = 2.6; wroof.rotation.y = Math.PI/4; g.add(wroof);
+    g.position.set(x, 0, z); scene.add(g);
+    props.push({ x, z, r: 1.3 });
+  }
+  function buildNPC(color, name) {
+    const g = new M.Group(); const body = new M.Group();
+    const robe = new M.Mesh(new M.CylinderGeometry(.3, .44, 1.3, 8), mat(color, .8));
+    robe.position.y = .85; robe.castShadow = true; body.add(robe);
+    const head = new M.Mesh(new M.SphereGeometry(.26, 12, 10), mat(0xe8c39a, .7));
+    head.position.y = 1.75; body.add(head);
+    const hood = new M.Mesh(new M.ConeGeometry(.3, .45, 8), mat(new M.Color(color).offsetHSL(0,0,-.06).getHex(), .8));
+    hood.position.y = 1.95; body.add(hood);
+    const armGeo = new M.CylinderGeometry(.07,.06,.6,5);
+    for (const side of [-1,1]) {
+      const arm = new M.Mesh(armGeo, mat(color, .8));
+      arm.position.set(side*.38, 1.1, 0); arm.rotation.z = side*.3; body.add(arm);
+    }
+    g.add(body);
+    return { group: g, body };
+  }
+
+  function buildTown(Z) {
+    // dirt paths: portal → well → houses
+    const pathMat = texMat('dirt', 6, 6);
+    const mkPath = (x1,z1,x2,z2,w) => {
+      const len = Math.hypot(x2-x1, z2-z1);
+      const p = new M.Mesh(new M.PlaneGeometry(w, len), pathMat);
+      p.rotation.x = -Math.PI/2; p.rotation.z = Math.atan2(x2-x1, z2-z1) + Math.PI;
+      p.position.set((x1+x2)/2, .04, (z1+z2)/2); p.receiveShadow = true; scene.add(p);
+    };
+    mkPath(-27,-27, 0,0, 3); mkPath(0,0, 18,-14, 2.4); mkPath(0,0, -16,12, 2.4);
+    mkPath(0,0, 10,18, 2.4); mkPath(0,0, -18,-10, 2.2);
+    // houses
+    buildHouse(14, -16, .4, 5, 4.4, 3.2);
+    buildHouse(-17, 10, -.5, 4.6, 4, 3);
+    buildHouse(8, 19, 2.6, 5.2, 4.6, 3.4);
+    buildHouse(-19, -9, 1.1, 4.4, 4, 2.9);
+    buildHouse(20, 8, -2.2, 4.8, 4.2, 3.1);
+    buildHouse(-6, 24, .1, 4.2, 3.8, 2.8);
+    // central well + lamps
+    buildWell(0, 0);
+    buildLamp(-24,-24); buildLamp(4,-4); buildLamp(-4,4); buildLamp(12,14); buildLamp(-12,-14); buildLamp(16,-11);
+    // pond with water texture
+    const pond = new M.Mesh(new M.CircleGeometry(6, 24), texMat('water', 3, 3, { rough:.15, metal:.5 }));
+    pond.rotation.x = -Math.PI/2; pond.position.set(26, .05, 18); scene.add(pond);
+    const pl = new M.PointLight(0x2a6a8e, .8, 14); pl.position.set(26, 1, 18); scene.add(pl);
+    props.push({ x:26, z:18, r:6 });
+    // wooden fences along main path
+    for (let i=0;i<8;i++){
+      const t = i/8, fx = -27 + (27*t), fz = -27 + (27*t);
+      for (const off of [-2.2, 2.2]) {
+        const f = new M.Mesh(new M.CylinderGeometry(.06,.07,.8,5), texMat('wood', 1, 1));
+        f.position.set(fx + off*.7, .4, fz - off*.7); scene.add(f);
+      }
+    }
+    // ---------- NPCS ----------
+    const NPC_DEFS = [
+      { id:'bertram', name:'Bertram', role:'General Goods', color:0x6a4a2a, x:12, z:-13, wander:3,
+        lines:['Potions, charms, curios from beyond the wood. Coin talks, friend.',
+               'I heard the shrine whispering again last night. Buy extra potions. Just in case.'],
+        shop:'general' },
+      { id:'yara', name:'Yara', role:'Blacksmith', color:0x5a2a2a, x:-15, z:8, wander:2,
+        lines:['Steel doesn\'t care about prophecies. It cares about edge and temper.',
+               'Bring me gold, I\'ll bring you something that bites.'],
+        shop:'smith' },
+      { id:'fenn', name:'Fenn', role:'Alchemist', color:0x2a5a5a, x:24, z:14, wander:4,
+        lines:['The pond water glows since the Star fell. Delicious irony — it heals AND it kills.',
+               'Mana is just water that remembers being lightning.'],
+        shop:'alch' },
+      { id:'maera', name:'Elder Maera', role:'Village Elder', color:0x8a8a9a, x:3, z:3, wander:1,
+        lines:[] }, // quest-aware lines provided by Main
+      { id:'pip', name:'Pip', role:'Kid', color:0x4a6a3a, x:-6, z:18, wander:8,
+        lines:['Serah showed me a REAL Wingly feather! It glows!',
+               'When I grow up I\'m gonna be a Dragoon too!'],
+        shop:null },
+    ];
+    for (const def of NPC_DEFS) {
+      const m = buildNPC(def.color, def.name);
+      if (def.id === 'pip') m.group.scale.setScalar(.7);
+      m.group.position.set(def.x, 0, def.z);
+      scene.add(m.group);
+      npcs.push({ ...def, c3d: m, home:{x:def.x, z:def.z}, wanderT: rnd(1,4), tx:def.x, tz:def.z });
+    }
+  }
+
+  // ---------- NPC update/interact ----------
+  function updateNPCs(dt) {
+    for (const n of npcs) {
+      const gp = n.c3d.group.position;
+      n.wanderT -= dt;
+      if (n.wanderT <= 0) {
+        n.wanderT = rnd(3, 7);
+        const a = rnd(0, Math.PI*2);
+        n.tx = n.home.x + Math.cos(a) * n.wander;
+        n.tz = n.home.z + Math.sin(a) * n.wander;
+      }
+      const dx = n.tx - gp.x, dz = n.tz - gp.z, d = Math.hypot(dx, dz);
+      if (d > .2) {
+        gp.x += dx/d * dt * 1.4; gp.z += dz/d * dt * 1.4;
+        n.c3d.group.rotation.y = Math.atan2(dx, dz);
+        n.c3d.body.position.y = Math.abs(Math.sin(animT*8 + gp.x))*.05;
+      } else n.c3d.body.position.y = Math.sin(animT*2 + gp.x)*.02;
+    }
+  }
+  function nearNPC() {
+    const p = player3d.group.position;
+    for (const n of npcs) {
+      if (Math.hypot(p.x - n.c3d.group.position.x, p.z - n.c3d.group.position.z) < 2.6) return n;
+    }
+    return null;
   }
 
   function buildSky() {
@@ -401,11 +579,13 @@ const World = (() => {
 
   const PORTAL_DEFS = {
     forest: [ { x:-45, z:-45, col:0x8a6aff, to:'grotto', label:'Sunken Grotto',
-                lockCheck: () => !(RPG.player.flags && RPG.player.flags.heraldDead) } ],
+                lockCheck: () => !(RPG.player.flags && RPG.player.flags.heraldDead) },
+              { x:27, z:27, col:0xffdd88, to:'town', label:'Mirewood Hollow', lockCheck: null } ],
     grotto: [ { x: 30, z: 30, col:0x3ad5c8, to:'forest', label:'Whisperwood', lockCheck: null },
               { x:-42, z:-42, col:0xff5533, to:'crater', label:'Star Crater',
                 lockCheck: () => !(RPG.player.flags && RPG.player.flags.starKey) } ],
     crater: [ { x: 30, z: 30, col:0x8a6aff, to:'grotto', label:'Sunken Grotto', lockCheck: null } ],
+    town: [ { x:-27, z:-27, col:0x8a6aff, to:'forest', label:'Whisperwood', lockCheck: null } ],
   };
   function buildOnePortal(cfg) {
     const g = new M.Group();
@@ -502,6 +682,60 @@ const World = (() => {
     return { group:g, body, legL:null, legR:null, armL:null, armR:null, sword:null, head, golem:true };
   }
 
+  // ---------- WEAPON VISUALS ----------
+  function buildWeaponMesh(baseType) {
+    const g = new M.Group();
+    if (baseType === 'dagger') {
+      const blade = new M.Mesh(new M.BoxGeometry(.05, .5, .1),
+        mat(0xdfe8f0, .25, .9, 0x8899ff, .3));
+      blade.position.y = .3; g.add(blade);
+      const guard = new M.Mesh(new M.BoxGeometry(.2, .05, .14), mat(0xd4af37, .4, .8));
+      g.add(guard);
+    } else if (baseType === 'staff') {
+      const shaft = new M.Mesh(new M.CylinderGeometry(.04, .05, 1.3, 6), mat(0x4a3420, .8));
+      shaft.position.y = .5; g.add(shaft);
+      const orb = new M.Mesh(new M.SphereGeometry(.13, 10, 8), mat(0x66ccff, .2, .3, 0x2288ff, 1.6));
+      orb.position.y = 1.25; g.add(orb);
+      const ol = new M.PointLight(0x4488ff, .8, 4); ol.position.y = 1.25; g.add(ol);
+    } else if (baseType === 'spear') {
+      const shaft = new M.Mesh(new M.CylinderGeometry(.035, .04, 1.6, 6), mat(0x3a2c1a, .8));
+      shaft.position.y = .6; g.add(shaft);
+      const tip = new M.Mesh(new M.ConeGeometry(.08, .4, 6), mat(0xdfe8f0, .25, .9, 0x8899ff, .3));
+      tip.position.y = 1.55; g.add(tip);
+    } else { // sword
+      const blade = new M.Mesh(new M.BoxGeometry(.07, .9, .16),
+        mat(0xcfd8e8, .3, .9, 0x8899ff, .25));
+      blade.position.y = .55; g.add(blade);
+      const guard = new M.Mesh(new M.BoxGeometry(.3, .07, .2), mat(0xd4af37, .4, .8));
+      g.add(guard);
+    }
+    return g;
+  }
+  function currentWeaponType() {
+    if (typeof RPG === 'undefined' || !RPG.player) return 'sword';
+    return (RPG.player.equip.weapon && RPG.player.equip.weapon.baseType) || 'sword';
+  }
+  // refresh the on-character weapon + armor tints after gear changes
+  function refreshPlayerGear() {
+    if (!player3d || !player3d.refs) return;
+    if (player3d.refs.sword) player3d.body.remove(player3d.refs.sword);
+    const sword = buildWeaponMesh(currentWeaponType());
+    sword.position.set(.6, 1.15, 0); sword.rotation.z = -.4;
+    player3d.body.add(sword);
+    player3d.refs.sword = sword;
+    // armor/helm rarity tints on the torso + helm materials
+    const tintOf = r => ({ magic:0x2244aa, rare:0xaa8811, unique:0x994d0f }[r] || 0x000000);
+    const armor = RPG.player.equip.armor, helm = RPG.player.equip.helm;
+    if (player3d.refs.torsoMat) {
+      player3d.refs.torsoMat.emissive = new M.Color(tintOf(armor?.rarity));
+      player3d.refs.torsoMat.emissiveIntensity = armor?.rarity === 'normal' || !armor ? 0 : .45;
+    }
+    if (player3d.refs.helmMat) {
+      player3d.refs.helmMat.emissive = new M.Color(tintOf(helm?.rarity));
+      player3d.refs.helmMat.emissiveIntensity = helm?.rarity === 'normal' || !helm ? 0 : .45;
+    }
+  }
+
   // ---------- CHARACTERS ----------
   function buildCharacter(color, isEnemy=false, scale=1) {
     const rig_refs = {};
@@ -519,13 +753,10 @@ const World = (() => {
     const legGeo = new M.CylinderGeometry(.11*scale, .09*scale, .65*scale, 6);
     const legL = new M.Mesh(legGeo, mat(0x2a2f3a, .9)); legL.position.set(-.18*scale, .35*scale, 0); body.add(legL);
     const legR = new M.Mesh(legGeo, mat(0x2a2f3a, .9)); legR.position.set(.18*scale, .35*scale, 0); body.add(legR);
-    const sword = new M.Group();
-    const blade = new M.Mesh(new M.BoxGeometry(.07*scale, .9*scale, .16*scale),
-      mat(0xcfd8e8, .3, .9, isEnemy?0x000000:0x8899ff, isEnemy?0:.25));
-    blade.position.y = .55*scale; sword.add(blade);
-    const guard = new M.Mesh(new M.BoxGeometry(.3*scale, .07*scale, .2*scale), mat(0xd4af37, .4, .8));
-    sword.add(guard);
+    const sword = isEnemy ? buildWeaponMesh('sword') : buildWeaponMesh(currentWeaponType());
+    sword.scale.setScalar(scale);
     sword.position.set(.6*scale, 1.15*scale, 0); sword.rotation.z = -.4; body.add(sword);
+    rig_refs.sword = sword; rig_refs.torsoMat = c; rig_refs.helmMat = c;
     // class accessories (player only)
     if (!isEnemy && typeof RPG !== 'undefined' && RPG.player) {
       const cls = RPG.player.cls;
@@ -574,6 +805,7 @@ const World = (() => {
 
   // ---------- ENEMIES ----------
   function spawnEnemies(Z) {
+    if (!Z.enemies.length) return;
     const lvl = (RPG.player ? RPG.player.level : 1) + Z.levelMod;
     for (let i=0;i<Z.enemyCount;i++){
       const t = Z.enemies[rndi(0, Z.enemies.length-1)];
@@ -741,6 +973,7 @@ const World = (() => {
   }
   function spawnAmbush(count) {
     const Z = ZONES[currentZone];
+    if (!Z.enemies.length) return;
     const p0 = player3d.group.position;
     for (let i=0;i<count;i++){
       const a = rnd(0, Math.PI*2);
@@ -861,6 +1094,7 @@ const World = (() => {
     particles.rotation.y += dt*.01;
     particles.material.opacity = .6 + Math.sin(animT*2.3)*.25;
     updateLeaves(dt);
+    updateNPCs(dt);
 
     // herald spawns when the quest is active and the player nears the shrine
     if (RPG.player && !bossSpawned && currentZone === 'forest'
@@ -923,6 +1157,10 @@ const World = (() => {
     ctx.beginPath(); ctx.arc(R,R,R-2,0,7); ctx.fill();
     const s = (R-4) / (WORLD_R+10);
     if (currentZone === 'forest') { ctx.fillStyle = '#525a6e'; ctx.beginPath(); ctx.arc(R, R, 5, 0, 7); ctx.fill(); }
+    ctx.fillStyle = '#6a707e';
+    for (const h of houses) ctx.fillRect(R + h.x*s - 3, R + h.z*s - 3, 6, 6);
+    ctx.fillStyle = '#6fcf97';
+    for (const n of npcs) { ctx.beginPath(); ctx.arc(R + n.c3d.group.position.x*s, R + n.c3d.group.position.z*s, 2, 0, 7); ctx.fill(); }
     for (const pt of portals) {
       ctx.fillStyle = '#cc88ff';
       ctx.beginPath(); ctx.arc(R + pt.x*s, R + pt.z*s, 3, 0, 7); ctx.fill();
@@ -949,7 +1187,7 @@ const World = (() => {
   }
 
   return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
-    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture,
+    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture, nearNPC, refreshPlayerGear, buildWeaponMesh, currentWeaponType,
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },
     get player3d(){ return player3d; }, get enemies(){ return enemies; },
     get zone(){ return currentZone; },
