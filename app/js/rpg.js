@@ -1,4 +1,4 @@
-/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory, party */
+/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory, party (Serah + Kael) */
 const RPG = (() => {
 
   // ---------- CLASSES ----------
@@ -143,12 +143,14 @@ const RPG = (() => {
       inventory: [], spirit: 0, dragoonForm: false,
       buffs: {}, cheatDeathUsed: false, kills: 0,
       serah: { hp: 0, mp: 0, weapon: null },
+      kael: { hp: 0, mp: 0, weapon: null },
     };
     // starter weapon
     const w = genItem(1, 'normal', 'weapon', clsKey);
     player.equip.weapon = w;
     recalc(); player.hp = player.maxHp; player.mp = player.maxMp;
     player.serah.hp = serahStats().maxHp; player.serah.mp = serahStats().maxMp;
+    player.kael.hp = kaelStats().maxHp; player.kael.mp = kaelStats().maxMp;
     return player;
   }
 
@@ -174,6 +176,30 @@ const RPG = (() => {
     { id:'wingly_light', name:'Wingly Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
     { id:'tailwind', name:'Tailwind', icon:'🌬', mp:8, req:4, desc:'+18% dodge for the whole party, 3 turns.', type:'buff', mult:.18 },
     { id:'starfall_shot', name:'Starfall Shot', icon:'☄', mp:18, req:8, desc:'Her deadliest arrow. 330% damage, high crit chance.', type:'phys', mult:3.3, critBonus:.25 },
+  ];
+
+  // ---------- KAEL (party member — the Lancer) ----------
+  // tanky spear fighter: joins after the Herald falls
+  function kaelStats() {
+    const lvl = player.level;
+    const wpn = player.kael.weapon;
+    const wDmg = wpn && wpn.dmg ? (wpn.dmg[0]+wpn.dmg[1])/2 : (8 + lvl*2.5);
+    return {
+      maxHp: Math.round(player.maxHp * .8),
+      maxMp: Math.round(player.maxMp * .35),
+      attack: Math.round(player.attack * .5 + wDmg),
+      defense: Math.round(player.defense * .8),
+      critChance: player.critChance * .8,
+      critMult: player.critMult,
+      chainMax: 4,
+    };
+  }
+
+  const KAEL_SKILLS = [
+    { id:'pierce', name:'Pierce', icon:'🔱', mp:7, req:0, desc:'A lance through the guard. 210% damage.', type:'phys', mult:2.1 },
+    { id:'bulwark', name:'Bulwark', icon:'🛡', mp:9, req:0, desc:'+25% defense for the whole party, 3 turns.', type:'buff', mult:.25 },
+    { id:'sweeping_arc', name:'Sweeping Arc', icon:'🌀', mp:11, req:6, desc:'A wide spear sweep. 260% damage.', type:'phys', mult:2.6, critBonus:.1 },
+    { id:'dragonslayer', name:'Dragonslayer', icon:'🐲', mp:20, req:9, desc:'The sky-splitting thrust. 400% damage.', type:'phys', mult:4.0, critBonus:.2 },
   ];
 
   function skillRank(id){ return player.skills[id] || 0; }
@@ -242,6 +268,11 @@ const RPG = (() => {
       const ss = serahStats();
       player.serah.hp = Math.min(player.serah.hp, ss.maxHp);
       player.serah.mp = Math.min(player.serah.mp, ss.maxMp);
+    }
+    if (player.kael) {
+      const ks = kaelStats();
+      player.kael.hp = Math.min(player.kael.hp, ks.maxHp);
+      player.kael.mp = Math.min(player.kael.mp, ks.maxMp);
     }
   }
 
@@ -334,6 +365,6 @@ const RPG = (() => {
   function hasSave(){ return !!localStorage.getItem('dfs_save'); }
 
   return { CLASSES, BASES, newPlayer, recalc, genItem, gainXp, gainGold, skillRank, getSkill,
-           save, load, hasSave, serahStats, SERAH_SKILLS,
+           save, load, hasSave, serahStats, SERAH_SKILLS, kaelStats, KAEL_SKILLS,
            get player(){ return player; }, set player(p){ player = p; } };
 })();
