@@ -1,4 +1,4 @@
-/* main.js — bootstrap, state machine, all UI wiring */
+/* main.js — bootstrap, state machine, quest engine, all UI wiring */
 const Main = (() => {
   let state = 'title'; // title | world | battle | paused
   let lastT = performance.now();
@@ -12,7 +12,255 @@ const Main = (() => {
     setTimeout(()=> t.remove(), 3000);
   };
 
-  // ---------- UI helpers (global for other modules) ----------
+  const F = key => !!(RPG.player.flags && RPG.player.flags[key]);
+  const Fget = key => (RPG.player.flags && RPG.player.flags[key]) || 0;
+  function Fset(key, val=true) { (RPG.player.flags ||= {})[key] = val; }
+
+  // ============================================================
+  //  QUEST ENGINE — Act I: "The Fallen Star"
+  // ============================================================
+  const MAIN_QUESTS = [
+    { id:'q1', num:'I', title:'Awakening',
+      story: `The Fallen Star tore the heavens and sank beyond the wood. You wake at the forest's edge with the Dragoon Spirit fused to your chest — and the Whisperwood crawling with corrupted fiends. Serah, a Wingly scout, hauls you upright: "Move or die. The fiends first — questions after."`,
+      objectives: [
+        { text:'Slay fiends of the Whisperwood', prog:()=>[Math.min(3,RPG.player.kills),3] },
+        { text:'Claim the Spirit Shard at the ruined shrine', prog:()=>[F('spiritShard')?1:0,1] },
+      ],
+      rewards:{ xp:60, gold:30 },
+      doneBeat:'The shard sinks into your chest and the Spirit roars. Serah stares: "So it\'s true. It chose you."',
+      objects:[
+        { when:()=>RPG.player.kills>=3, zone:'forest', id:'shard', x:2.5, z:4, col:0xff5533,
+          label:'Claim the Spirit Shard', kind:'pickup',
+          onUse:()=>{ Fset('spiritShard'); World.removeInteract('shard');
+            RPG.player.spirit = Math.min(100, RPG.player.spirit + 20);
+            AudioSys.play('loot'); toast('✦ Spirit Shard claimed — <b>+20% spirit</b>'); UI.refreshHUD(); } },
+      ] },
+
+    { id:'q2', num:'II', title:"The Wingly's Trial",
+      story:`Serah leads you to three ancient attunement crystals, half-buried in the wood. "The old trial of the Dragon Knights. Attune them in the order the verse commands and the Spirit will open to you. Guess wrong — and the trial resets." The verse reads: <i>"First the STAR that fell from grace, then the MOON that watched it fall, and last the EMBER left behind."</i>`,
+      objectives: [
+        { text:'Attune the crystals — in the verse\u2019s order', prog:()=>[Math.min(3,Fget('attuned')),3], hint:'Verse: "First the STAR… then the MOON… last the EMBER."' },
+      ],
+      rewards:{ xp:90, gold:40, spirit:25 },
+      doneBeat:'All three crystals sing in harmony. Serah smiles for the first time: "You felt it, didn\'t you? The Spirit listening."',
+      objects:[
+        { when:()=>true, zone:'forest', id:'c_star', x:15, z:-38, col:0xcc88ff, label:'Attune the Star Crystal', kind:'attune',
+          onUse:(it)=>attuneCrystal('c_star', 'Star') },
+        { when:()=>true, zone:'forest', id:'c_moon', x:35, z:10, col:0x7ec8ff, label:'Attune the Moon Crystal', kind:'attune',
+          onUse:(it)=>attuneCrystal('c_moon', 'Moon') },
+        { when:()=>true, zone:'forest', id:'c_ember', x:-20, z:40, col:0xff9a4d, label:'Attune the Ember Crystal', kind:'attune',
+          onUse:(it)=>attuneCrystal('c_ember', 'Ember') },
+      ] },
+
+    { id:'q3', num:'III', title:'Herald of Shadows',
+      story:`At the shrine, Melbu Frahma's will has raised a Herald — a knight-shaped hole in the world. It is shielded by three <b>Shadow Anchors</b> driven into the shrine stones. Break the anchors. Then break the Herald. Serah: "It will know what you do. It will send pieces of itself to stop you."`,
+      objectives: [
+        { text:'Destroy the Shadow Anchors at the shrine', prog:()=>[Math.min(3,Fget('anchorsDestroyed')),3] },
+        { text:'Slay <b>Melbu\'s Herald</b>', prog:()=>[F('heraldDead')?1:0,1] },
+      ],
+      rewards:{ xp:150, gold:80, item:'magic' },
+      doneBeat:'The Herald folds like burnt paper. Somewhere below, stone grinds open — the way to the Grotto is free.',
+      objects:[
+        { when:()=>true, zone:'forest', id:'anchor1', x:6, z:1, col:0x9922cc, label:'Destroy the Shadow Anchor', kind:'anchor',
+          onUse:()=>destroyAnchor('anchor1') },
+        { when:()=>true, zone:'forest', id:'anchor2', x:-5, z:5, col:0x9922cc, label:'Destroy the Shadow Anchor', kind:'anchor',
+          onUse:()=>destroyAnchor('anchor2') },
+        { when:()=>true, zone:'forest', id:'anchor3', x:-5, z:-5, col:0x9922cc, label:'Destroy the Shadow Anchor', kind:'anchor',
+          onUse:()=>destroyAnchor('anchor3') },
+      ] },
+
+    { id:'q4', num:'IV', title:'Drowned Relics',
+      story:`Below the shrine, the Sunken Grotto breathes cold violet dark. Four relics of the old Dragoon order lie drowned in it. The Tyrant of the Deep guards them jealously — take them all, and it will have no choice but to surface. Serah: "It watches through the water. Expect teeth with every relic."`,
+      objectives: [
+        { text:'Enter the Sunken Grotto (violet portal, southwest)', prog:()=>[F('enteredGrotto')?1:0,1] },
+        { text:'Recover the Drowned Relics', prog:()=>[Math.min(4,Fget('relics')),4] },
+      ],
+      rewards:{ xp:200, gold:120, item:'rare' },
+      doneBeat:'The fourth relic leaves the water screaming. Far off, the lair empties. Something enormous begins to climb.',
+      objects:[
+        { when:()=>true, zone:'grotto', id:'relic1', x:20, z:-15, col:0x3ad5c8, label:'Recover the Drowned Relic', kind:'pickup',
+          onUse:()=>takeRelic('relic1') },
+        { when:()=>true, zone:'grotto', id:'relic2', x:-25, z:10, col:0x3ad5c8, label:'Recover the Drowned Relic', kind:'pickup',
+          onUse:()=>takeRelic('relic2') },
+        { when:()=>true, zone:'grotto', id:'relic3', x:-10, z:-35, col:0x3ad5c8, label:'Recover the Drowned Relic', kind:'pickup',
+          onUse:()=>takeRelic('relic3') },
+        { when:()=>true, zone:'grotto', id:'relic4', x:35, z:25, col:0x3ad5c8, label:'Recover the Drowned Relic', kind:'pickup',
+          onUse:()=>takeRelic('relic4') },
+      ] },
+
+    { id:'q5', num:'V', title:'The Tyrant',
+      story:`The water abandons the lair. What climbs out is older than the shrine above, and it remembers starving. Serah, quietly: "When it bleeds enough, it will stop being careful. That is when it is worst."`,
+      objectives: [
+        { text:'Slay the <b>Tyrant of the Deep</b> — beware its enrage below 30%', prog:()=>[F('tyrantDead')?1:0,1] },
+      ],
+      rewards:{ xp:300, gold:250, item:'rare' },
+      doneBeat:'The Tyrant collapses into its own lair, and the lair collapses with it. In its gullet: a shard of burning star-metal.',
+      objects:[] },
+
+    { id:'q6', num:'VI', title:'The Fallen Star',
+      story:`Herald's ember, Tyrant's trophy — one thing is still missing: a fragment of the Star itself. A meteor shard fell near the place you woke. Take it, and the Star Key is forged. Then walk into the crater and <b>end Melbu Frahma</b>. Serah: "Whatever stands up in that crater — it will not be a herald. It will be him."`,
+      objectives: [
+        { text:'Recover the Meteor Shard in the Whisperwood', prog:()=>[F('starKey')?1:0,1] },
+        { text:'Destroy <b>MELBU FRAHMA</b> in the Star Crater', prog:()=>[F('melbuDead')?1:0,1] },
+      ],
+      rewards:{ xp:500, gold:500, item:'unique' },
+      doneBeat:'The Star gutters like a candle. It is finished.',
+      objects:[
+        { when:()=>true, zone:'forest', id:'meteor', x:12, z:14, col:0xff6a3a, label:'Recover the Meteor Shard', kind:'pickup',
+          onUse:()=>{ Fset('starKey'); World.removeInteract('meteor'); AudioSys.play('dragoon');
+            toast('🔑 <b>The Star Key is forged</b> — the crater portal in the Grotto is open!'); } },
+      ] },
+  ];
+
+  const SIDE_QUESTS = [
+    { id:'s1', title:'Elite Hunter',
+      text:'Gold-ringed champions stalk the wilds. Prove yourself their better.',
+      prog:()=>[Math.min(3,Fget('eliteKills')),3],
+      rewards:{ gold:150, item:'magic' } },
+    { id:'s2', title:'Hoarder',
+      text:'Greed keeps you alive out here. Pick up 6 items.',
+      prog:()=>[Math.min(6,Fget('itemsFound')),6],
+      rewards:{ gold:80, potions:2 } },
+  ];
+
+  // ---- quest object mechanics ----
+  const ATTUNE_ORDER = ['c_star','c_moon','c_ember'];
+  function attuneCrystal(id, name) {
+    const idx = Fget('attuned');
+    if (ATTUNE_ORDER[idx] === id) {
+      Fset('attuned', idx+1);
+      World.removeInteract(id);
+      AudioSys.play('perfect');
+      toast(`✦ The <b>${name} Crystal</b> hums in tune (${idx+1}/3)`);
+      World.spawnAmbush(1);
+    } else {
+      Fset('attuned', 0);
+      AudioSys.play('miss');
+      toast('The crystals flare, then dim — <b>wrong order, the trial resets</b>.<br><small><i>"First the STAR… then the MOON… last the EMBER."</i></small>');
+      resyncObjects(true);
+    }
+  }
+  function destroyAnchor(id) {
+    Fset('anchorsDestroyed', Fget('anchorsDestroyed')+1);
+    World.removeInteract(id);
+    AudioSys.play('crit');
+    toast(`⚓ Shadow Anchor destroyed (${Fget('anchorsDestroyed')}/3) — the Herald's shield weakens!`);
+    World.spawnAmbush(1);
+  }
+  function takeRelic(id) {
+    Fset('relics', Fget('relics')+1);
+    World.removeInteract(id);
+    AudioSys.play('loot');
+    toast(`✦ Drowned Relic recovered (${Fget('relics')}/4)`);
+    if (Math.random() < .5) World.spawnAmbush(1);
+    if (Fget('relics') >= 4) toast('⚠ The lair empties… <b>the Tyrant surfaces!</b>', 'var(--blood)');
+  }
+
+  // ---- engine ----
+  function currentMain() { return MAIN_QUESTS.find(q => !F('done_'+q.id)); }
+  function getQuestStage() { return MAIN_QUESTS.filter(q => F('done_'+q.id)).length + 1; }
+
+  function applyRewards(r) {
+    const p = RPG.player;
+    if (r.xp) { const ups = RPG.gainXp(r.xp); if (ups) { AudioSys.play('levelup'); toast(`★ LEVEL UP! Now level ${p.level}`); } }
+    if (r.gold) { const g = RPG.gainGold(r.gold); }
+    if (r.spirit) p.spirit = Math.min(100, p.spirit + r.spirit);
+    if (r.potions) { p.potions.hp += r.potions; p.potions.mp += r.potions; }
+    if (r.item) {
+      const it = RPG.genItem(p.level + 2, r.item === 'unique' ? 'unique' : r.item === 'rare' ? 'rare' : 'magic');
+      if (p.inventory.length < 24) { p.inventory.push(it); toast(`Reward: <b class="rarity-${it.rarity}">${it.name}</b>`); }
+      else p.gold += 100;
+    }
+    UI.refreshHUD(); UI.refreshInv();
+  }
+
+  function completeQuest(q, isSide) {
+    Fset('done_'+q.id);
+    AudioSys.play('levelup');
+    toast(`<b style="color:var(--gold-hi)">QUEST COMPLETE — ${q.title}</b>`, 'var(--gold)');
+    applyRewards(q.rewards || {});
+    if (!isSide && q.doneBeat) setTimeout(()=> toast(`<i>${q.doneBeat}</i>`), 1600);
+    resyncObjects(true);
+  }
+
+  function checkQuests() {
+    if (!RPG.player) return;
+    const q = currentMain();
+    if (q && q.objectives.every(o => { const [a,b] = o.prog(); return a >= b; })) completeQuest(q, false);
+    for (const s of SIDE_QUESTS) {
+      if (!F('done_'+s.id)) { const [a,b] = s.prog(); if (a >= b) completeQuest(s, true); }
+    }
+  }
+
+  // ---- quest objects sync (signature-based) ----
+  let objSig = '';
+  function resyncObjects(force) {
+    if (!RPG.player || !World.syncQuestObjects) return;
+    const q = currentMain();
+    const zone = World.zone;
+    const list = [];
+    if (q) for (const o of q.objects || []) {
+      if (o.zone === zone && o.when()) {
+        list.push({ id:o.id, x:o.x, z:o.z, col:o.col, label:o.label, kind:o.kind, onUse:o.onUse });
+      }
+    }
+    const sig = zone + '|' + list.map(l=>l.id).join(',');
+    if (force || sig !== objSig) { objSig = sig; World.syncQuestObjects(list); }
+  }
+
+  // ---- tracker + log rendering ----
+  function refreshQuest() {
+    const el = ui('quest-text'); if (!el || !RPG.player) return;
+    checkQuests();
+    const q = currentMain();
+    let html = '';
+    if (q) {
+      html += `<div style="color:var(--gold-hi);margin-bottom:3px">${q.num}. ${q.title}</div>`;
+      for (const o of q.objectives) {
+        const [a,b] = o.prog();
+        const done = a >= b;
+        html += `<div class="${done?'q-done':''}">${done?'✓':'·'} ${o.text} <span class="q-prog">${a}/${b}</span></div>`;
+      }
+    } else html = '<span class="q-done">✓ Act I complete</span>';
+    for (const s of SIDE_QUESTS) {
+      if (F('done_'+s.id)) continue;
+      const [a,b] = s.prog();
+      html += `<div style="margin-top:5px;color:var(--dim)">◇ ${s.title} <span class="q-prog">${a}/${b}</span></div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  function renderQuestLog() {
+    const wrap = ui('quest-log-body'); wrap.innerHTML = '';
+    let html = `<div class="ql-act">ACT I — THE FALLEN STAR</div>`;
+    for (const q of MAIN_QUESTS) {
+      const done = F('done_'+q.id);
+      const active = currentMain() === q;
+      html += `<div class="ql-quest ${done?'done':active?'active':'locked'}">
+        <h4>${q.num}. ${q.title} ${done?'<span class="ql-check">✓</span>':''}</h4>
+        <p class="ql-story">${q.story}</p>
+        <div class="ql-objs">${q.objectives.map(o => { const [a,b]=o.prog();
+          return `<div class="${a>=b?'q-done':''}">${a>=b?'✓':'·'} ${o.text} <span class="q-prog">${a}/${b}</span>${o.hint?`<div class="ql-hint">${o.hint}</div>`:''}</div>`; }).join('')}</div>
+        <div class="ql-rewards">Rewards: ${Object.entries(q.rewards).map(([k,v])=>k==='item'? v+' item': v+' '+k).join(' · ')}</div>
+      </div>`;
+    }
+    html += `<div class="ql-act">SIDE QUESTS</div>`;
+    for (const s of SIDE_QUESTS) {
+      const done = F('done_'+s.id); const [a,b] = s.prog();
+      html += `<div class="ql-quest ${done?'done':'active'}"><h4>◇ ${s.title} ${done?'<span class="ql-check">✓</span>':''}</h4>
+        <p class="ql-story">${s.text}</p>
+        <div class="${a>=b?'q-done':''}">· Progress <span class="q-prog">${a}/${b}</span></div></div>`;
+    }
+    html += `<div class="ql-act">THE ROAD AHEAD</div>
+      <div class="ql-quest locked"><h4>ACT II — The Wingly Empire</h4><p class="ql-story">With the Star destroyed, the sky-roads open. Serah's people are not what they told the humans they were. (In development.)</p></div>
+      <div class="ql-quest locked"><h4>ACT III — The Sea of Ash</h4><p class="ql-story">The Emperor's fleets burn the coast. Dragoons are being hunted for their Spirits. (In development.)</p></div>
+      <div class="ql-quest locked"><h4>ACT IV — The Moon That Never Sets</h4><p class="ql-story">What called the Star down is still up there. It knows your name now. (In development.)</p></div>`;
+    wrap.innerHTML = html;
+  }
+
+  // ============================================================
+  //  UI helpers
+  // ============================================================
   window.UI = {
     refreshHUD() {
       const p = RPG.player; if (!p) return;
@@ -38,20 +286,43 @@ const Main = (() => {
       setTimeout(()=> f.remove(), 1200);
     },
     refreshInv() { renderInventory(); renderEquipment(); this.refreshHUD(); },
-    gameVictory() {
-      ui('results-title').textContent = '🌟 LEGEND FULFILLED 🌟';
+    gameVictory() { // Herald down
+      ui('results-title').textContent = 'HERALD DESTROYED';
       ui('results-title').classList.remove('defeat');
       ui('results-body').innerHTML =
-        `<div>Melbu's Shadow is destroyed. The Fallen Star dims, and dawn returns to the forest.</div>
-         <div style="margin-top:10px;color:var(--gold-hi)">Level ${RPG.player.level} ${RPG.player.name} · ${RPG.player.kills} kills · ${RPG.player.gold} gold</div>
-         <div style="color:var(--dim);font-size:13px;margin-top:8px">The world stays open — keep hunting loot as long as you like.</div>`;
+        `<div>The Herald folds like burnt paper. Far below, stone grinds on stone.</div>
+         <div style="color:var(--lod-ice);font-size:14px;margin-top:8px">The violet portal in the southwest now leads down — to the Sunken Grotto.</div>`;
       ui('results-screen').classList.remove('hidden');
       AudioSys.play('victory');
-      ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); };
+      ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
+    },
+    grottoVictory() { // Tyrant down
+      ui('results-title').textContent = '💎 TYRANT SLAIN 💎';
+      ui('results-title').classList.remove('defeat');
+      ui('results-body').innerHTML =
+        `<div>The Tyrant collapses into its own lair, and the lair collapses with it.<br>In its gullet: a shard of burning star-metal.</div>
+         <div style="color:var(--lod-ice);font-size:14px;margin-top:8px">One piece remains — the Meteor Shard, back in the Whisperwood where you woke.</div>`;
+      ui('results-screen').classList.remove('hidden');
+      AudioSys.play('victory');
+      ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
+    },
+    actComplete() { // Melbu down — ACT I COMPLETE
+      ui('results-title').textContent = '🌟 ACT I COMPLETE 🌟';
+      ui('results-title').classList.remove('defeat');
+      ui('results-body').innerHTML =
+        `<div style="font-size:18px;letter-spacing:3px;color:var(--gold-hi)">THE FALLEN STAR</div>
+         <div style="margin:10px 0">Melbu Frahma's avatar shatters into burning rain. The crater cools. The forest breathes.</div>
+         <div style="color:var(--gold-hi)">Level ${RPG.player.level} ${RPG.player.name} · ${RPG.player.kills} kills · ${RPG.player.gold} gold</div>
+         <div style="color:var(--dim);font-size:13px;margin-top:10px">ACT II — <i>The Wingly Empire</i> — is in development.<br>The world stays open: elites, loot and the trial crystals remain.</div>`;
+      ui('results-screen').classList.remove('hidden');
+      AudioSys.play('victory');
+      ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
     },
   };
 
-  // ---------- HOTBAR ----------
+  // ============================================================
+  //  HOTBAR / PANELS
+  // ============================================================
   function buildHotbar() {
     const hb = ui('hotbar'); hb.innerHTML = '';
     const p = RPG.player; if (!p) return;
@@ -83,12 +354,9 @@ const Main = (() => {
     }
   }
 
-  // ---------- CHARACTER SHEET ----------
   function renderCharSheet() {
     const p = RPG.player; if (!p) return;
-    for (const a of ['str','dex','vit','ene']) {
-      ui('attr-'+a).textContent = Math.floor(p.attr[a]);
-    }
+    for (const a of ['str','dex','vit','ene']) ui('attr-'+a).textContent = Math.floor(p.attr[a]);
     ui('attr-points').textContent = p.attrPoints > 0 ? `· ${p.attrPoints} points to spend` : '';
     document.querySelectorAll('.attr-plus').forEach(b => {
       b.disabled = p.attrPoints <= 0;
@@ -111,7 +379,6 @@ const Main = (() => {
     ui('derived-list').innerHTML = d.map(([k,v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
   }
 
-  // ---------- SKILL TREE ----------
   function renderSkillTree() {
     const p = RPG.player; if (!p) return;
     ui('skill-points').textContent = `· ${p.skillPoints} skill point${p.skillPoints===1?'':'s'}`;
@@ -150,7 +417,6 @@ const Main = (() => {
     }
   }
 
-  // ---------- INVENTORY / EQUIPMENT ----------
   const AFFIX_LABEL = { dmgPct:'% damage', dmgFlat:'damage', defFlat:'defense', defPct:'% defense',
     hpFlat:'HP', hpPct:'% HP', mpFlat:'MP', mpPct:'% MP', critPct:'% crit', dodgePct:'% dodge',
     spdPct:'% speed', strFlat:'STR', dexFlat:'DEX', vitFlat:'VIT', eneFlat:'ENE', allAttr:'all attributes',
@@ -216,7 +482,6 @@ const Main = (() => {
       };
       wrap.appendChild(d);
     });
-    // potion cells
     for (const [kind, icon, label] of [['hp','🧪','Healing'],['mp','🔷','Mana']]) {
       if (p.potions[kind] > 0) {
         const d = document.createElement('div'); d.className = 'inv-cell';
@@ -236,6 +501,7 @@ const Main = (() => {
       if (id === 'char-sheet') renderCharSheet();
       if (id === 'skill-tree') renderSkillTree();
       if (id === 'inventory') { renderEquipment(); renderInventory(); }
+      if (id === 'quest-log') renderQuestLog();
       m.classList.remove('hidden');
     } else m.classList.add('hidden');
   }
@@ -257,6 +523,11 @@ const Main = (() => {
       UI.refreshHUD(); toWorld();
     };
   }
+  function onZoneChanged(zone) {
+    if (zone === 'grotto') Fset('enteredGrotto');
+    objSig = ''; // force object resync in new zone
+    refreshQuest(); resyncObjects(true);
+  }
 
   // ---------- BOOT ----------
   let chosenClass = null;
@@ -272,7 +543,12 @@ const Main = (() => {
   });
   ui('btn-start').onclick = () => {
     if (!chosenClass) return;
-    AudioSys.init(); AudioSys.resume(); AudioSys.startMusic();
+    AudioSys.init(); AudioSys.resume(); AudioSys.play('click');
+    ui('title-screen').classList.add('hidden');
+    ui('intro-screen').classList.remove('hidden');
+  };
+  ui('btn-intro-begin').onclick = () => {
+    AudioSys.init(); AudioSys.resume(); AudioSys.startMusic(); AudioSys.play('click');
     RPG.newPlayer(chosenClass);
     RPG.recalc();
     World.init(ui('game-canvas'));
@@ -282,13 +558,13 @@ const Main = (() => {
       state = 'battle';
       Battle.start(enemy);
     };
-    ui('title-screen').classList.add('hidden');
+    ui('intro-screen').classList.add('hidden');
     ui('hud').classList.remove('hidden');
-    UI.refreshHUD();
-    toast(`Welcome, ${RPG.player.name}. Slay 8 fiends to draw out the shrine's master.`);
+    UI.refreshHUD(); refreshQuest(); resyncObjects(true);
+    toast(`<b>Act I — The Fallen Star</b>`);
+    setTimeout(()=> toast('<i>Serah: "Fiends first, questions after. Move!"</i>'), 2500);
+    setTimeout(()=> toast('Press <b>J</b> for your quest log'), 6000);
     state = 'world';
-    // starter toasts
-    setTimeout(()=> toast('Spend points anytime: <b>C</b> attributes · <b>K</b> skills'), 4000);
   };
 
   // pause
@@ -308,11 +584,13 @@ const Main = (() => {
     if (e.code === 'KeyC') toggleModal('char-sheet');
     if (e.code === 'KeyK') toggleModal('skill-tree');
     if (e.code === 'KeyI') toggleModal('inventory');
+    if (e.code === 'KeyJ') toggleModal('quest-log');
     if (e.code === 'KeyQ') hotbarUse({ potion:'hp' });
     if (e.code === 'KeyR') hotbarUse({ potion:'mp' });
+    if (e.code === 'KeyE') { if (!World.tryInteract()) World.tryPortal(); }
     if (e.code === 'Escape') {
-      const anyOpen = ['char-sheet','skill-tree','inventory'].some(id => !ui(id).classList.contains('hidden'));
-      if (anyOpen) ['char-sheet','skill-tree','inventory'].forEach(id => toggleModal(id, false));
+      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log'].some(id => !ui(id).classList.contains('hidden'));
+      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log'].forEach(id => toggleModal(id, false));
       else {
         const p = ui('pause-menu');
         const show = p.classList.contains('hidden');
@@ -323,19 +601,37 @@ const Main = (() => {
   });
 
   // ---------- MAIN LOOP ----------
-  let minimapT = 0;
+  let minimapT = 0, questT = 0;
   function loop(now) {
     requestAnimationFrame(loop);
-    const dt = Math.min(.05, (now - lastT)/1000); lastT = now;
+    const rawDt = (now - lastT)/1000;
+    const dt = Math.min(.05, rawDt); lastT = now;
     if (state === 'world') {
       World.update(dt);
-      minimapT += dt;
+      minimapT += rawDt;
       if (minimapT > .12) { minimapT = 0; World.drawMinimap(); }
+      questT += rawDt;
+      if (questT > .5) { questT = 0; refreshQuest(); resyncObjects(); updateInteractHint(); }
     } else if (state === 'battle') {
       Battle.update(dt);
     }
   }
+  function updateInteractHint() {
+    const el = ui('interact-hint');
+    const it = World.nearInteract ? World.nearInteract() : null;
+    const pt = World.nearPortal ? World.nearPortal() : null;
+    if (it) {
+      el.innerHTML = `<b>E</b> — ${it.label}`;
+      el.classList.remove('hidden');
+    } else if (pt) {
+      const locked = World.portalLocked(pt);
+      el.innerHTML = locked ? '🔒 <b>Sealed</b> — a quest bars the way'
+        : `<b>E</b> — Enter ${pt.label}`;
+      el.classList.remove('hidden');
+    } else el.classList.add('hidden');
+  }
   requestAnimationFrame(loop);
 
-  return { toWorld, onDefeat, get state(){ return state; } };
+  return { toWorld, onDefeat, onZoneChanged, getQuestStage,
+    get state(){ return state; } };
 })();
