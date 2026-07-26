@@ -36,7 +36,29 @@
     </div>
   </div>
   <button id="btn-start" class="btn-primary" disabled>SELECT YOUR HERO</button>
-  <p class="title-hint">WASD move · Mouse orbit · Space = Addition timing · C/K/I menus</p>
+  <p class="title-hint">WASD move · Mouse orbit · Space = Addition timing · C/K/I/J menus</p>
+</div>
+
+<!-- ============ INTRO STORY ============ -->
+<div id="intro-screen" class="screen hidden">
+  <div class="intro-card">
+    <h2 class="intro-act">ACT I</h2>
+    <h3 class="intro-name">THE FALLEN STAR</h3>
+    <p class="intro-text">The night the Star fell, the Whisperwood changed. Fiends crawled out of the dark
+    between the trees, and the old shrine began to whisper a name — <b>Melbu Frahma</b>.</p>
+    <p class="intro-text">You wake at the forest's edge with a burning stone fused to your chest: a
+    <b>Dragoon Spirit</b>. Beside you kneels <b>Serah</b>, a Wingly scout with silver eyes.</p>
+    <p class="intro-text intro-quote">"Move or die. The fiends first — questions after."</p>
+  </div>
+  <button id="btn-intro-begin" class="btn-primary">ENTER THE WHISPERWOOD</button>
+</div>
+
+<!-- ============ QUEST LOG ============ -->
+<div id="quest-log" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2>QUEST LOG <span class="modal-close" data-close="quest-log">✕</span></h2>
+    <div id="quest-log-body"></div>
+  </div>
 </div>
 
 <!-- ============ HUD ============ -->
@@ -55,8 +77,10 @@
   <div id="hud-right">
     <div id="minimap-wrap"><canvas id="minimap" width="140" height="140"></canvas></div>
     <div id="gold-display">◈ <span id="gold-amt">0</span></div>
+    <div id="quest-tracker"><h4>QUEST</h4><div id="quest-text"></div></div>
   </div>
-  <div id="hud-hint">C Character · K Skills · I Inventory · E Pick up · Esc Menu</div>
+  <div id="interact-hint" class="hidden"></div>
+  <div id="hud-hint">C Character · K Skills · I Inventory · J Quests · E Interact · Esc Menu</div>
 </div>
 
 <!-- ============ DAMAGE / LOOT FLOATERS ============ -->
