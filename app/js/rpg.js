@@ -1,4 +1,4 @@
-/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory */
+/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory, party */
 const RPG = (() => {
 
   // ---------- CLASSES ----------
@@ -142,13 +142,39 @@ const RPG = (() => {
       equip: { weapon:null, armor:null, helm:null, boots:null, amulet:null, ring1:null, ring2:null, charm:null },
       inventory: [], spirit: 0, dragoonForm: false,
       buffs: {}, cheatDeathUsed: false, kills: 0,
+      serah: { hp: 0, mp: 0, weapon: null },
     };
     // starter weapon
     const w = genItem(1, 'normal', 'weapon', clsKey);
     player.equip.weapon = w;
     recalc(); player.hp = player.maxHp; player.mp = player.maxMp;
+    player.serah.hp = serahStats().maxHp; player.serah.mp = serahStats().maxMp;
     return player;
   }
+
+  // ---------- SERAH (party member) ----------
+  // her stats scale from the player's level; she has her own HP/MP pool and weapon slot
+  function serahStats() {
+    const lvl = player.level;
+    const wpn = player.serah.weapon;
+    const wDmg = wpn && wpn.dmg ? (wpn.dmg[0]+wpn.dmg[1])/2 : (6 + lvl*2);
+    return {
+      maxHp: Math.round(player.maxHp * .55),
+      maxMp: Math.round(player.maxMp * .5),
+      attack: Math.round(player.attack * .42 + wDmg),
+      defense: Math.round(player.defense * .5),
+      critChance: Math.min(.65, player.critChance * 1.25),
+      critMult: player.critMult,
+      chainMax: 3,
+    };
+  }
+
+  const SERAH_SKILLS = [
+    { id:'silver_arrow', name:'Silver Arrow', icon:'🏹', mp:6, req:0, desc:'A streak of Wingly light. 180% damage.', type:'phys', mult:1.8 },
+    { id:'wingly_light', name:'Wingly Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
+    { id:'tailwind', name:'Tailwind', icon:'🌬', mp:8, req:4, desc:'+18% dodge for the whole party, 3 turns.', type:'buff', mult:.18 },
+    { id:'starfall_shot', name:'Starfall Shot', icon:'☄', mp:18, req:8, desc:'Her deadliest arrow. 330% damage, high crit chance.', type:'phys', mult:3.3, critBonus:.25 },
+  ];
 
   function skillRank(id){ return player.skills[id] || 0; }
   function getSkill(id){
@@ -212,6 +238,11 @@ const RPG = (() => {
     player.lifeLeech = pct.lifeLeech;
     if (player.hp !== undefined) player.hp = Math.min(player.hp, player.maxHp);
     if (player.mp !== undefined) player.mp = Math.min(player.mp, player.maxMp);
+    if (player.serah) {
+      const ss = serahStats();
+      player.serah.hp = Math.min(player.serah.hp, ss.maxHp);
+      player.serah.mp = Math.min(player.serah.mp, ss.maxMp);
+    }
   }
 
   // ---------- ITEMS ----------
@@ -237,6 +268,13 @@ const RPG = (() => {
       affixes: [], level,
     };
     if (base.dmg) item.dmg = [Math.round(base.dmg[0]*lvlScale), Math.round(base.dmg[1]*lvlScale)];
+    // weapon family for on-character visuals
+    if (slot === 'weapon') {
+      const n = base.name;
+      item.baseType = n.includes('Lance') ? 'spear'
+        : (n.includes('Staff') || n.includes('Rod') || n.includes('Orb')) ? 'staff'
+        : (n.includes('Dagger') || n.includes('Kris') || n.includes('Fang')) ? 'dagger' : 'sword';
+    }
     if (base.def) item.def = Math.round(base.def*lvlScale);
 
     if (rarity === 'unique') {
@@ -296,5 +334,6 @@ const RPG = (() => {
   function hasSave(){ return !!localStorage.getItem('dfs_save'); }
 
   return { CLASSES, BASES, newPlayer, recalc, genItem, gainXp, gainGold, skillRank, getSkill,
-           save, load, hasSave, get player(){ return player; }, set player(p){ player = p; } };
+           save, load, hasSave, serahStats, SERAH_SKILLS,
+           get player(){ return player; }, set player(p){ player = p; } };
 })();
