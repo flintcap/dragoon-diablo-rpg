@@ -62,6 +62,31 @@
   </div>
 </div>
 
+<!-- ============ DIALOGUE ============ -->
+<div id="dialogue" class="modal hidden">
+  <div class="modal-panel dlg-panel">
+    <h2 id="dlg-name">NPC <span class="modal-close" data-close="dialogue">✕</span></h2>
+    <div id="dlg-role"></div>
+    <p id="dlg-text"></p>
+    <div id="dlg-buttons">
+      <button id="dlg-shop" class="btn-primary hidden">BROWSE WARES</button>
+      <button id="dlg-leave" class="btn-secondary">LEAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SHOP ============ -->
+<div id="shop" class="modal hidden">
+  <div class="modal-panel wide">
+    <h2 id="shop-title">SHOP <span id="shop-gold"></span> <span class="modal-close" data-close="shop">✕</span></h2>
+    <div id="shop-tabs">
+      <button id="tab-buy" class="shop-tab active">BUY</button>
+      <button id="tab-sell" class="shop-tab">SELL</button>
+    </div>
+    <div id="shop-list"></div>
+  </div>
+</div>
+
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
   <div id="hud-topleft">
@@ -91,6 +116,11 @@
 <div id="battle-ui" class="hidden">
   <div id="battle-banner"></div>
   <div id="turn-indicator"></div>
+  <div id="serah-bars" class="hidden">
+    <span class="serah-label">SERAH</span>
+    <div class="bar serah-hp-bar"><div id="serah-hp"></div></div>
+    <div class="bar serah-mp-bar"><div id="serah-mp"></div></div>
+  </div>
   <div id="boss-bar" class="hidden"><div id="boss-name"></div><div id="boss-track"><div id="boss-fill"></div></div></div>
   <div id="addition-ring" class="hidden">
     <div id="ring-outer"></div>
@@ -98,13 +128,7 @@
     <div id="ring-judge"></div>
   </div>
   <div id="combo-counter" class="hidden"></div>
-  <div id="battle-menu" class="hidden">
-    <button class="battle-btn" data-action="attack">⚔ Attack <small>Addition combo</small></button>
-    <button class="battle-btn" data-action="skills">✦ Skills <small>MP cost</small></button>
-    <button class="battle-btn" data-action="items">✚ Items <small>potions</small></button>
-    <button class="battle-btn" data-action="dragoon" id="btn-dragoon">🐉 Dragoon <small id="dragoon-req">needs 100% spirit</small></button>
-    <button class="battle-btn" data-action="defend">🛡 Defend <small>half damage, +spirit</small></button>
-  </div>
+  <div id="battle-menu" class="hidden"></div>
   <div id="battle-submenu" class="hidden"></div>
   <div id="battle-log"></div>
 </div>
@@ -170,6 +194,7 @@
 <div id="fade-overlay"></div>
 
 <script src="js/three.min.js"></script>
+<script src="js/textures.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/rpg.js"></script>
 <script src="js/game.js"></script>
