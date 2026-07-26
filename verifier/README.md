@@ -55,3 +55,10 @@ shockwave), kind-specific attack sounds. Caught & fixed a critical pre-existing 
 bug: Serah-only parties locked the player out of all future turns. Differs from prior: first
 pass purely on battle feel; first bug found by probing live turn state over time. Run logged
 at verifier/runs/2026-07-27-battle-fx-2.md — all PASS, all three regressions green.
+
+## v7 — 2026-07-27
+Measures: gear depth pass — pauldrons (rarity color, defense-scaled) on armor, shin guards
+on boots, glowing amulet gems, golden rotating unique-item aura + pulsing light, exact
+removal on unequip, battle-rig carry-over for shield/helm/amulet. Differs from prior: first
+pass where EVERY equipment slot has a live on-character visual; first aura effect. Run
+logged at verifier/runs/2026-07-27-gear-depth.md — all PASS, Act-I regression green.
