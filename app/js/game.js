@@ -5,7 +5,7 @@ const World = (() => {
   let keys = {}, mouseDown = false, camYaw = 0.6, camPitch = 0.62;
   const CAM_DIST = 12;
   const WORLD_R = 70;
-  let animT = 0, onEncounter = null, bossSpawned = false, grottoBossSpawned = false;
+  let animT = 0, onEncounter = null, bossSpawned = false, grottoBossSpawned = false, camSnap = true;
   let currentZone = 'forest';
 
   const M = THREE;
@@ -28,10 +28,10 @@ const World = (() => {
       sky: true, trees: 110, treePalette: 0x12261a, rocks: 40, crystals: 14,
       ruins: true, fireflies: [0xaaffcc, 220],
       enemies: [
-        { name:'Gloom Wolf',    color:0x4a5568, hp:40,  dmg:8,  xp:30,  gold:12, scale:.9, speed:2.2 },
-        { name:'Cursed Husk',   color:0x5a4a3a, hp:55,  dmg:11, xp:42,  gold:16, scale:1.0, speed:1.4 },
-        { name:'Void Sprite',   color:0x7a3aa0, hp:35,  dmg:14, xp:50,  gold:22, scale:.8, speed:2.8 },
-        { name:'Fallen Knight', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
+        { name:'Gloom Wolf',    kind:'wolf', color:0x4a5568, hp:40,  dmg:8,  xp:30,  gold:12, scale:.9, speed:2.2 },
+        { name:'Cursed Husk',   kind:'golem', color:0x5a4a3a, hp:55,  dmg:11, xp:42,  gold:16, scale:1.0, speed:1.4 },
+        { name:'Void Sprite',   kind:'wraith', color:0x7a3aa0, hp:35,  dmg:14, xp:50,  gold:22, scale:.8, speed:2.8 },
+        { name:'Fallen Knight', kind:'humanoid', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
       ],
       enemyCount: 14, levelMod: 0,
     },
@@ -43,10 +43,10 @@ const World = (() => {
       sky: false, trees: 0, treePalette: 0, rocks: 25, crystals: 46,
       ruins: false, fireflies: [0x8a7aff, 160],
       enemies: [
-        { name:'Cave Lurker',   color:0x3a4a5a, hp:70,  dmg:15, xp:70,  gold:26, scale:1.0, speed:2.4 },
-        { name:'Crystal Golem', color:0x5a8a9e, hp:120, dmg:18, xp:110, gold:40, scale:1.3, speed:1.2 },
-        { name:'Drowned Wraith',color:0x4a3a6a, hp:60,  dmg:22, xp:95,  gold:38, scale:.95, speed:2.9 },
-        { name:'Gem Eater',     color:0x9e5a3a, hp:90,  dmg:17, xp:85,  gold:46, scale:1.05, speed:1.8 },
+        { name:'Cave Lurker',   kind:'wolf', color:0x3a4a5a, hp:70,  dmg:15, xp:70,  gold:26, scale:1.0, speed:2.4 },
+        { name:'Crystal Golem', kind:'golem', color:0x5a8a9e, hp:120, dmg:18, xp:110, gold:40, scale:1.3, speed:1.2 },
+        { name:'Drowned Wraith',kind:'wraith', color:0x4a3a6a, hp:60,  dmg:22, xp:95,  gold:38, scale:.95, speed:2.9 },
+        { name:'Gem Eater',     kind:'golem', color:0x9e5a3a, hp:90,  dmg:17, xp:85,  gold:46, scale:1.05, speed:1.8 },
       ],
       enemyCount: 12, levelMod: 3,
     },
@@ -58,17 +58,17 @@ const World = (() => {
       sky: false, trees: 0, treePalette: 0, rocks: 30, crystals: 20,
       ruins: false, fireflies: [0xff9a4d, 240],
       enemies: [
-        { name:'Ash Revenant',  color:0x4a2a2a, hp:110, dmg:24, xp:130, gold:50, scale:1.05, speed:2.0 },
-        { name:'Star Spawn',    color:0x6a3a5a, hp:85,  dmg:28, xp:150, gold:60, scale:.9, speed:3.0 },
-        { name:'Magma Husk',    color:0x7a3a1a, hp:160, dmg:26, xp:170, gold:65, scale:1.35, speed:1.3 },
-        { name:'Ember Fiend',   color:0xa03818, hp:95,  dmg:30, xp:160, gold:70, scale:1.0, speed:2.6 },
+        { name:'Ash Revenant',  kind:'wraith', color:0x4a2a2a, hp:110, dmg:24, xp:130, gold:50, scale:1.05, speed:2.0 },
+        { name:'Star Spawn',    kind:'wraith', color:0x6a3a5a, hp:85,  dmg:28, xp:150, gold:60, scale:.9, speed:3.0 },
+        { name:'Magma Husk',    kind:'golem', color:0x7a3a1a, hp:160, dmg:26, xp:170, gold:65, scale:1.35, speed:1.3 },
+        { name:'Ember Fiend',   kind:'humanoid', color:0xa03818, hp:95,  dmg:30, xp:160, gold:70, scale:1.0, speed:2.6 },
       ],
       enemyCount: 12, levelMod: 6,
     },
   };
-  const BOSS = { name:'Melbu\'s Herald', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true, bossId:'herald', shielded:true };
-  const GROTTO_BOSS = { name:'Tyrant of the Deep', color:0x1a3a4a, hp:700, dmg:30, xp:1200, gold:900, scale:2.1, speed:1.6, boss:true, bossId:'tyrant', enrage:{ at:.3, dmgMult:1.5 } };
-  const CRATER_BOSS = { name:'MELBU FRAHMA', color:0x33111a, hp:1100, dmg:36, xp:3000, gold:2000, scale:2.4, speed:1.8, boss:true, bossId:'melbu',
+  const BOSS = { name:'Melbu\'s Herald', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true, bossId:'herald', kind:'humanoid', shielded:true };
+  const GROTTO_BOSS = { name:'Tyrant of the Deep', color:0x1a3a4a, hp:700, dmg:30, xp:1200, gold:900, scale:2.1, speed:1.6, boss:true, bossId:'tyrant', kind:'golem', enrage:{ at:.3, dmgMult:1.5 } };
+  const CRATER_BOSS = { name:'MELBU FRAHMA', color:0x33111a, hp:1100, dmg:36, xp:3000, gold:2000, scale:2.4, speed:1.8, boss:true, bossId:'melbu', kind:'humanoid',
     phase2: { name:'🐉 MELBU FRAHMA — DRAGON AVATAR 🐉', dmgMult:1.4, healPct:.15, color:0x8a1420 } };
   const ELITE_PREFIX = ['Cursed', 'Ancient', 'Void-Touched', 'Bloodbound'];
 
@@ -116,10 +116,13 @@ const World = (() => {
     if (zoneId === 'crater') buildCrater(Z);
     if (Z.ruins) buildRuins();
     buildRocksAndCrystals(Z);
+    buildClutter(Z);
+    buildLeaves();
     buildParticles(Z);
     buildPortal(zoneId);
     scene.add(player3d.group);
     player3d.group.position.set(zoneId === 'forest' ? 20 : 24, 0, zoneId === 'forest' ? 20 : 24);
+    camSnap = true;
     spawnEnemies(Z);
   }
 
@@ -152,6 +155,77 @@ const World = (() => {
             : { color:0x062030, emissive:0x083a55, emissiveIntensity:.32, roughness:.2, metalness:.6 }));
         pool.rotation.x = -Math.PI/2; pool.position.set(p.x, .03, p.z); scene.add(pool);
         if (lava) { const pl = new M.PointLight(0xcc4400, .8, 10); pl.position.set(p.x, 1, p.z); scene.add(pl); }
+      }
+    }
+  }
+
+  function buildClutter(Z) {
+    if (currentZone !== 'forest') return;
+    // grass tufts
+    for (let i=0;i<260;i++){
+      const p = randInCircle(WORLD_R+8);
+      const blades = 3;
+      for (let b=0;b<blades;b++){
+        const blade = new M.Mesh(new M.ConeGeometry(rnd(.04,.09), rnd(.25,.55), 4),
+          mat(new M.Color(0x142a18).offsetHSL(0, rnd(-.03,.05), rnd(-.02,.03)).getHex(), .95));
+        blade.position.set(p.x + rnd(-.25,.25), rnd(.1,.2), p.z + rnd(-.25,.25));
+        blade.rotation.set(rnd(-.25,.25), rnd(0,3), rnd(-.25,.25));
+        scene.add(blade);
+      }
+    }
+    // nightbloom flowers
+    for (let i=0;i<36;i++){
+      const p = randInCircle(WORLD_R);
+      const col = [0x7ec8ff, 0xcc88ff, 0xff9a9a][rndi(0,2)];
+      const f = new M.Mesh(new M.ConeGeometry(.09, .18, 5), mat(col, .5, 0, col, .5));
+      f.position.set(p.x, .22, p.z); scene.add(f);
+      const stem = new M.Mesh(new M.CylinderGeometry(.015,.02,.2,4), mat(0x142a18, .95));
+      stem.position.set(p.x, .1, p.z); scene.add(stem);
+    }
+    // fallen logs
+    for (let i=0;i<9;i++){
+      const p = randInCircle(WORLD_R-5);
+      if (Math.hypot(p.x,p.z) < 12) continue;
+      const log = new M.Mesh(new M.CylinderGeometry(rnd(.2,.3), rnd(.22,.32), rnd(2,4), 7), mat(0x241a10, .95));
+      log.position.set(p.x, .28, p.z);
+      log.rotation.z = Math.PI/2; log.rotation.y = rnd(0,3);
+      log.castShadow = log.receiveShadow = true; scene.add(log);
+      props.push({ x:p.x, z:p.z, r:1.4 });
+    }
+    // path edge pebbles
+    for (let d=8; d<WORLD_R; d+=4.5){
+      const a = Math.PI/4;
+      for (const off of [-1.2, 1.2]) {
+        const peb = new M.Mesh(new M.DodecahedronGeometry(rnd(.1,.22), 0), mat(0x252b38, .95));
+        peb.position.set(Math.cos(a)*d - Math.sin(a)*off + rnd(-.3,.3), .08, Math.sin(a)*d + Math.cos(a)*off + rnd(-.3,.3));
+        scene.add(peb);
+      }
+    }
+  }
+
+  // falling leaves
+  let leaves = [];
+  function buildLeaves() {
+    leaves = [];
+    if (currentZone !== 'forest') return;
+    for (let i=0;i<70;i++){
+      const leaf = new M.Mesh(new M.PlaneGeometry(.16,.2),
+        new M.MeshBasicMaterial({ color: [0x2a4a2a, 0x3a5a24, 0x4a3a1a][rndi(0,2)], transparent:true, opacity:.8, side:M.DoubleSide }));
+      const p = randInCircle(WORLD_R);
+      leaf.position.set(p.x, rnd(2, 12), p.z);
+      leaf.userData = { sway: rnd(0,6), fall: rnd(.4,.9) };
+      scene.add(leaf); leaves.push(leaf);
+    }
+  }
+  function updateLeaves(dt) {
+    for (const leaf of leaves) {
+      leaf.position.y -= leaf.userData.fall * dt;
+      leaf.userData.sway += dt;
+      leaf.position.x += Math.sin(leaf.userData.sway*2)*dt*.8;
+      leaf.rotation.set(leaf.userData.sway*2, leaf.userData.sway, 0);
+      if (leaf.position.y < 0) {
+        const p = randInCircle(WORLD_R);
+        leaf.position.set(p.x, rnd(8, 13), p.z);
       }
     }
   }
@@ -302,12 +376,25 @@ const World = (() => {
     scene.userData.spiritStone = stone;
   }
 
+  let dotTex = null;
+  function getDotTexture() {
+    if (dotTex) return dotTex;
+    const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(16,16,0,16,16,16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(.4, 'rgba(255,255,255,.5)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,32,32);
+    dotTex = new M.CanvasTexture(cv);
+    return dotTex;
+  }
   function buildParticles(Z) {
     const geo = new M.BufferGeometry(); const n = Z.fireflies[1]; const pts = new Float32Array(n*3);
     for (let i=0;i<n;i++){ const p = randInCircle(WORLD_R+10);
       pts[i*3]=p.x; pts[i*3+1]=rnd(.5,7); pts[i*3+2]=p.z; }
     geo.setAttribute('position', new M.BufferAttribute(pts, 3));
-    particles = new M.Points(geo, new M.PointsMaterial({ color:Z.fireflies[0], size:.16,
+    particles = new M.Points(geo, new M.PointsMaterial({ color:Z.fireflies[0], size:.22, map:getDotTexture(),
       transparent:true, opacity:.85, blending:M.AdditiveBlending, depthWrite:false }));
     scene.add(particles);
   }
@@ -344,7 +431,80 @@ const World = (() => {
   }
 
   // ---------- CHARACTERS ----------
+  // distinct silhouette rigs per enemy kind
+  function buildWolf(color, scale) {
+    const g = new M.Group(); const body = new M.Group();
+    const c = mat(color, .75, .1);
+    const trunk = new M.Mesh(new M.BoxGeometry(1.3*scale, .55*scale, .5*scale), c);
+    trunk.position.y = .75*scale; trunk.castShadow = true; body.add(trunk);
+    const head = new M.Mesh(new M.BoxGeometry(.45*scale, .4*scale, .42*scale), c);
+    head.position.set(.75*scale, .95*scale, 0); body.add(head);
+    const snout = new M.Mesh(new M.BoxGeometry(.3*scale, .18*scale, .2*scale), c);
+    snout.position.set(1.05*scale, .85*scale, 0); body.add(snout);
+    for (const side of [-1,1]) {
+      const ear = new M.Mesh(new M.ConeGeometry(.08*scale, .25*scale, 4), c);
+      ear.position.set(.68*scale, 1.22*scale, side*.12*scale); body.add(ear);
+      const eye = new M.Mesh(new M.SphereGeometry(.05*scale, 6, 6), new M.MeshBasicMaterial({ color:0xff3333 }));
+      eye.position.set(.9*scale, 1.02*scale, side*.13*scale); body.add(eye);
+    }
+    const tail = new M.Mesh(new M.ConeGeometry(.1*scale, .7*scale, 5), c);
+    tail.position.set(-.8*scale, .95*scale, 0); tail.rotation.z = Math.PI/2 - .5; body.add(tail);
+    const legGeo = new M.CylinderGeometry(.08*scale, .06*scale, .55*scale, 5);
+    const mk = (x,z) => { const l = new M.Mesh(legGeo, c); l.position.set(x, .3*scale, z); body.add(l); return l; };
+    const legL = mk(.45*scale, .18*scale), legR = mk(-.45*scale, .18*scale);
+    mk(.45*scale, -.18*scale); mk(-.45*scale, -.18*scale);
+    g.add(body);
+    return { group:g, body, legL, legR, armL:null, armR:null, sword:null, head, quad:true };
+  }
+  function buildWraith(color, scale) {
+    const g = new M.Group(); const body = new M.Group();
+    const c = mat(color, .4, .1, color, .35);
+    const robe = new M.Mesh(new M.ConeGeometry(.55*scale, 1.9*scale, 8), c);
+    robe.position.y = 1.15*scale; robe.castShadow = true; body.add(robe);
+    const hood = new M.Mesh(new M.ConeGeometry(.32*scale, .6*scale, 8), c);
+    hood.position.y = 2.2*scale; body.add(hood);
+    const faceVoid = new M.Mesh(new M.SphereGeometry(.2*scale, 10, 8),
+      new M.MeshBasicMaterial({ color: 0x050508 }));
+    faceVoid.position.set(0, 2.05*scale, .12*scale); body.add(faceVoid);
+    for (const side of [-1,1]) {
+      const eye = new M.Mesh(new M.SphereGeometry(.045*scale, 6, 6),
+        new M.MeshBasicMaterial({ color: 0x66eeff }));
+      eye.position.set(side*.08*scale, 2.08*scale, .26*scale); body.add(eye);
+      const arm = new M.Mesh(new M.CylinderGeometry(.05*scale, .03*scale, .8*scale, 5), c);
+      arm.position.set(side*.55*scale, 1.5*scale, .1*scale); arm.rotation.z = side*1.1; body.add(arm);
+    }
+    const glow = new M.PointLight(color, .8, 6); glow.position.y = 1.5*scale; body.add(glow);
+    g.add(body);
+    return { group:g, body, legL:null, legR:null, armL:null, armR:null, sword:null, head:hood, wraith:true };
+  }
+  function buildGolem(color, scale) {
+    const g = new M.Group(); const body = new M.Group();
+    const c = mat(color, .7, .2);
+    const trunk = new M.Mesh(new M.BoxGeometry(1.1*scale, 1*scale, .8*scale), c);
+    trunk.position.y = 1.15*scale; trunk.castShadow = true; body.add(trunk);
+    const head = new M.Mesh(new M.BoxGeometry(.45*scale, .4*scale, .45*scale), c);
+    head.position.y = 1.9*scale; body.add(head);
+    for (const side of [-1,1]) {
+      const eye = new M.Mesh(new M.SphereGeometry(.05*scale, 6, 6), new M.MeshBasicMaterial({ color:0xffcc33 }));
+      eye.position.set(side*.1*scale, 1.92*scale, .24*scale); body.add(eye);
+      const shoulder = new M.Mesh(new M.BoxGeometry(.5*scale, .45*scale, .5*scale), c);
+      shoulder.position.set(side*.8*scale, 1.55*scale, 0); body.add(shoulder);
+      const arm = new M.Mesh(new M.BoxGeometry(.32*scale, 1.1*scale, .32*scale), c);
+      arm.position.set(side*.85*scale, .8*scale, 0); body.add(arm);
+      const leg = new M.Mesh(new M.BoxGeometry(.35*scale, .7*scale, .4*scale), mat(0x222630, .8));
+      leg.position.set(side*.3*scale, .35*scale, 0); body.add(leg);
+    }
+    // core crystal in chest
+    const core = new M.Mesh(new M.OctahedronGeometry(.2*scale, 0),
+      mat(0xffaa33, .2, .3, 0xff8811, 1.5));
+    core.position.set(0, 1.2*scale, .42*scale); body.add(core);
+    g.add(body);
+    return { group:g, body, legL:null, legR:null, armL:null, armR:null, sword:null, head, golem:true };
+  }
+
+  // ---------- CHARACTERS ----------
   function buildCharacter(color, isEnemy=false, scale=1) {
+    const rig_refs = {};
     const g = new M.Group(); const body = new M.Group();
     const c = mat(color, .6, .25);
     const torso = new M.Mesh(new M.CylinderGeometry(.34*scale, .42*scale, .9*scale, 8), c);
@@ -366,6 +526,33 @@ const World = (() => {
     const guard = new M.Mesh(new M.BoxGeometry(.3*scale, .07*scale, .2*scale), mat(0xd4af37, .4, .8));
     sword.add(guard);
     sword.position.set(.6*scale, 1.15*scale, 0); sword.rotation.z = -.4; body.add(sword);
+    // class accessories (player only)
+    if (!isEnemy && typeof RPG !== 'undefined' && RPG.player) {
+      const cls = RPG.player.cls;
+      if (cls === 'knight') {
+        const cape = new M.Mesh(new M.PlaneGeometry(.85*scale, 1.15*scale),
+          new M.MeshStandardMaterial({ color: 0x7a1a1a, roughness: .9, side: M.DoubleSide }));
+        cape.position.set(0, 1.1*scale, -.3*scale); cape.rotation.x = .18; body.add(cape);
+        for (const side of [-1,1]) {
+          const paul = new M.Mesh(new M.SphereGeometry(.18*scale, 8, 6, 0, Math.PI*2, 0, Math.PI/2),
+            mat(0xd4af37, .4, .8));
+          paul.position.set(side*.48*scale, 1.52*scale, 0); body.add(paul);
+        }
+        rig_refs.cape = cape;
+      } else if (cls === 'rogue') {
+        const hood = new M.Mesh(new M.ConeGeometry(.34*scale, .42*scale, 8), mat(0x2a1a3a, .85));
+        hood.position.y = 2*scale; body.add(hood);
+        const scarf = new M.Mesh(new M.TorusGeometry(.22*scale, .07*scale, 6, 12), mat(0x4a2a6a, .85));
+        scarf.position.y = 1.6*scale; scarf.rotation.x = Math.PI/2; body.add(scarf);
+      } else if (cls === 'sorceress') {
+        const hat = new M.Mesh(new M.ConeGeometry(.42*scale, .55*scale, 9), mat(0x1a3a5c, .85));
+        hat.position.y = 2.25*scale; body.add(hat);
+        const brim = new M.Mesh(new M.CylinderGeometry(.55*scale, .55*scale, .05*scale, 12), mat(0x1a3a5c, .85));
+        brim.position.y = 2*scale; body.add(brim);
+        const orb = new M.Mesh(new M.SphereGeometry(.12*scale, 10, 8), mat(0x66ccff, .2, .2, 0x2288ff, 1.5));
+        orb.position.set(.6*scale, 1.75*scale, 0); body.add(orb);
+      }
+    }
     if (isEnemy) {
       for (const side of [-1,1]) {
         const eye = new M.Mesh(new M.SphereGeometry(.05*scale,6,6), new M.MeshBasicMaterial({ color:0xff2222 }));
@@ -373,7 +560,16 @@ const World = (() => {
       }
     }
     g.add(body);
-    return { group: g, body, armL, armR, legL, legR, sword, head };
+    return { group: g, body, armL, armR, legL, legR, sword, head, refs: rig_refs };
+  }
+
+  // ---------- ENEMY MODEL FACTORY ----------
+  function makeEnemyModel(t, scale) {
+    const kind = t.kind || 'humanoid';
+    if (kind === 'wolf') return buildWolf(t.color, scale);
+    if (kind === 'wraith') return buildWraith(t.color, scale);
+    if (kind === 'golem') return buildGolem(t.color, scale);
+    return buildCharacter(t.color, true, scale);
   }
 
   // ---------- ENEMIES ----------
@@ -388,7 +584,7 @@ const World = (() => {
   }
   function addEnemy(t, x, z, lvl, elite=false) {
     const scale = t.scale * (elite ? 1.35 : rnd(.9,1.1));
-    const c3d = buildCharacter(t.color, true, scale);
+    const c3d = makeEnemyModel(t, scale);
     c3d.group.position.set(x, 0, z); scene.add(c3d.group);
     if (elite) {
       const aura = new M.PointLight(0xffcc44, 1.1, 9); aura.position.y = 2; c3d.group.add(aura);
@@ -583,11 +779,13 @@ const World = (() => {
       player3d.armL.rotation.x = player3d.armR.rotation.x = 0;
       player3d.body.position.y = Math.sin(animT*2)*.03;
     }
+    if (player3d.refs && player3d.refs.cape) player3d.refs.cape.rotation.x = .18 + Math.sin(animT*3)*.06 + (moving?.25:0);
 
     const cx = p.x + Math.sin(camYaw)*Math.cos(camPitch)*CAM_DIST;
     const cz = p.z + Math.cos(camYaw)*Math.cos(camPitch)*CAM_DIST;
     const cy = p.y + Math.sin(camPitch)*CAM_DIST;
-    camera.position.lerp(new M.Vector3(cx, cy, cz), 1 - Math.pow(.0001, dt));
+    if (camSnap) { camera.position.set(cx, cy, cz); camSnap = false; }
+    else camera.position.lerp(new M.Vector3(cx, cy, cz), 1 - Math.pow(.0001, dt));
     camera.lookAt(p.x, p.y + 1.6, p.z);
 
     // fade trees blocking view
@@ -617,7 +815,8 @@ const World = (() => {
       const nx = ep.x + vx*dt, nz = ep.z + vz*dt;
       if (!collide(nx, nz) || dist < 11) { ep.x = nx; ep.z = nz; }
       if (vx||vz) e.c3d.group.rotation.y = Math.atan2(vx, vz);
-      e.c3d.body.position.y = Math.abs(Math.sin(animT*6 + ep.x))*.1;
+      if (e.c3d.wraith) { e.c3d.body.position.y = .3 + Math.sin(animT*2.2 + ep.x)*.18; e.c3d.group.rotation.y += dt*.4; }
+      else e.c3d.body.position.y = Math.abs(Math.sin(animT*6 + ep.x))*.1;
       if (dist < 1.8 && onEncounter) { onEncounter(e); }
     }
 
@@ -661,6 +860,7 @@ const World = (() => {
     if (scene.userData.skyGlow) scene.userData.skyGlow.scale.setScalar(1 + Math.sin(animT*.8)*.06);
     particles.rotation.y += dt*.01;
     particles.material.opacity = .6 + Math.sin(animT*2.3)*.25;
+    updateLeaves(dt);
 
     // herald spawns when the quest is active and the player nears the shrine
     if (RPG.player && !bossSpawned && currentZone === 'forest'
@@ -749,7 +949,7 @@ const World = (() => {
   }
 
   return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
-    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush,
+    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture,
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },
     get player3d(){ return player3d; }, get enemies(){ return enemies; },
     get zone(){ return currentZone; },
