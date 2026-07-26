@@ -1,0 +1,33 @@
+
+/* ---------- BOSS BAR ---------- */
+#boss-bar { position:absolute; bottom:64px; left:50%; transform:translateX(-50%); width:min(520px,60vw); text-align:center; }
+#boss-name { font-size:15px; letter-spacing:5px; color:#ff8877; text-shadow:0 2px 6px #000; margin-bottom:4px; }
+#boss-track { height:12px; background:#05070cd0; border:1px solid #5c1a1a; border-radius:6px; overflow:hidden; box-shadow:0 0 14px rgba(160,18,24,.4), inset 0 2px 4px #000; }
+#boss-fill { height:100%; width:100%; background:linear-gradient(180deg,#ff5a4d,#8a0f14 60%,#4a0508); transition:width .3s ease; }
+
+/* ---------- ZONE TITLE ---------- */
+#zone-title { position:fixed; top:34%; left:0; right:0; z-index:35; text-align:center; pointer-events:none; }
+#zone-title-act { font-size:14px; letter-spacing:10px; color:var(--lod-ice); text-shadow:0 2px 8px #000; }
+#zone-title-name { font-size:44px; letter-spacing:8px; color:var(--gold); text-shadow:0 0 30px rgba(212,175,55,.6), 0 4px 8px #000; }
+#zone-title.show { animation:zoneTitle 3s ease forwards; }
+@keyframes zoneTitle { 0%{opacity:0; transform:scale(.94);} 15%{opacity:1; transform:scale(1);} 75%{opacity:1;} 100%{opacity:0;} }
+
+/* ---------- FADE ---------- */
+#fade-overlay { position:fixed; inset:0; z-index:60; background:#04060c; opacity:0; pointer-events:none; transition:opacity .35s ease; }
+#fade-overlay.on { opacity:1; }
+
+/* ---------- SKILL TREE CONNECTORS ---------- */
+.tree-branch { position:relative; }
+.tree-branch::before { content:''; position:absolute; left:50%; top:70px; bottom:36px; width:2px;
+  background:linear-gradient(180deg, transparent, var(--panel-edge) 15%, var(--panel-edge) 85%, transparent); }
+.skill-node { z-index:1; }
+
+/* ---------- TOOLTIP COMPARE ---------- */
+#item-tooltip .tt-cmp { margin-top:8px; padding-top:8px; border-top:1px solid #1c2946; }
+#item-tooltip .tt-cmp-title { color:var(--dim); font-size:11px; letter-spacing:1px; margin-bottom:3px; }
+#item-tooltip .tt-better { color:#6fcf97; }
+#item-tooltip .tt-worse { color:#ff6655; }
+
+/* portrait glyph */
+#portrait-face { display:flex; align-items:center; justify-content:center; font-size:30px;
+  text-shadow:0 0 10px rgba(0,0,0,.8); }
