@@ -177,6 +177,60 @@ const Main = (() => {
       toast('⛈ The storm breaks open above the <b>summit shrine</b> — something is waiting there now.', 'var(--blood)'), 900);
   }
 
+  // ---------- BOUNTY BOARD — repeatable town contracts ----------
+  const BOUNTY_KINDS = [
+    { kind:'wolf', names:['the howling packs', 'the wolf packs'], count:[4,7], gold:[90,150] },
+    { kind:'golem', names:['shambling constructs', 'the husk-men'], count:[3,6], gold:[110,170] },
+    { kind:'wraith', names:['restless spirits', 'the void-touched'], count:[3,6], gold:[120,190] },
+    { kind:'humanoid', names:['fallen warriors', 'cursed blades-for-hire'], count:[3,5], gold:[130,200] },
+  ];
+  function genBountyOffers() {
+    const picks = [...BOUNTY_KINDS].sort(()=>Math.random()-.5).slice(0,2);
+    const offers = picks.map((k,i) => ({
+      id: 'k' + Date.now() + '_' + i, type:'kill', kind:k.kind,
+      label: k.names[Math.floor(Math.random()*k.names.length)],
+      count: k.count[0] + Math.floor(Math.random()*(k.count[1]-k.count[0]+1)),
+      gold: k.gold[0] + Math.floor(Math.random()*(k.gold[1]-k.gold[0])),
+    }));
+    if (Math.random() < .5) offers.push({ id:'e'+Date.now(), type:'elite', count:1, gold:220, label:'a gold-ringed champion — any zone' });
+    else offers.push({ id:'i'+Date.now(), type:'items', count:4, gold:140, label:'salvageable reagents (pick up 4 items)' });
+    Fset('bountyOffers', offers);
+  }
+  function acceptBounty(id) {
+    const offer = (RPG.player.flags.bountyOffers||[]).find(o => o.id === id);
+    if (!offer || F('bounty')) return;
+    Fset('bounty', offer);
+    Fset('bountyBase', { kill: Fget('kill_'+offer.kind), elite: Fget('eliteKills'), items: Fget('itemsFound') });
+    AudioSys.play('loot');
+    toast(`📜 Bounty accepted: <b>${bountyText(offer)}</b> — track it on the board in town.`);
+  }
+  function bountyText(b) {
+    if (b.type === 'kill') return `Cull ${b.count} of ${b.label}`;
+    if (b.type === 'elite') return `Slay ${b.label}`;
+    return `Bring ${b.label}`;
+  }
+  function bountyProgress() {
+    const b = RPG.player.flags && RPG.player.flags.bounty; if (!b) return [0,1];
+    const base = RPG.player.flags.bountyBase || {};
+    const now = b.type === 'kill' ? Fget('kill_'+b.kind) - (base.kill||0)
+      : b.type === 'elite' ? Fget('eliteKills') - (base.elite||0)
+      : Fget('itemsFound') - (base.items||0);
+    return [Math.max(0, Math.min(b.count, now)), b.count];
+  }
+  function claimBounty() {
+    const b = RPG.player.flags.bounty; if (!b) return;
+    const [a, need] = bountyProgress(); if (a < need) return;
+    RPG.player.gold += b.gold;
+    const it = RPG.genItem(RPG.player.level + 1, 'magic');
+    if (RPG.player.inventory.length < 24) RPG.player.inventory.push(it);
+    AudioSys.play('victory');
+    toast(`<b style="color:var(--gold-hi)">BOUNTY PAID — ◈ ${b.gold} gold</b> + <b class="rarity-${it.rarity}">${it.name}</b>`, 'var(--gold)');
+    RPG.player.flags.bounty = null;
+    RPG.player.flags.bountyBase = null;
+    genBountyOffers(); // fresh contracts go up
+    UI.refreshHUD(); UI.refreshInv();
+  }
+
   // ---- engine ----
   function currentMain() { return MAIN_QUESTS.find(q => !F('done_'+q.id)); }
   function getQuestStage() { return MAIN_QUESTS.filter(q => F('done_'+q.id)).length + 1; }
@@ -211,6 +265,15 @@ const Main = (() => {
     for (const s of SIDE_QUESTS) {
       if (!F('done_'+s.id)) { const [a,b] = s.prog(); if (a >= b) completeQuest(s, true); }
     }
+    // bounty completion ping (once per bounty)
+    if (F('bounty') && !F('bountyReady')) {
+      const [a, need] = bountyProgress();
+      if (a >= need) {
+        Fset('bountyReady');
+        AudioSys.play('levelup');
+        toast('📜 <b>Bounty complete!</b> Claim your pay at the Mirewood board.', 'var(--gold)');
+      }
+    }
   }
 
   // ---- quest objects sync (signature-based) ----
@@ -244,6 +307,16 @@ const Main = (() => {
           AudioSys.play('victory');
           toast('🔥 <b>Lyra the Pyromancer joins the party!</b><br><small>"Three years in that cage. Three years of practicing on rats. Point me at something worth burning." — she takes her own turn in battle now.</small>');
           World.spawnAmbush(2); // the Warden's remaining guards come running
+        } });
+    }
+    // the Mirewood Bounty Board — always present in town
+    if (zone === 'town') {
+      list.push({ id:'bounty_board', x:6, z:-6, col:0xd4af37, label:'Read the Bounty Board', kind:'pickup',
+        onUse: () => {
+          if (!F('bountyOffers')) genBountyOffers();
+          renderBounty();
+          toggleModal('bounty', true);
+          AudioSys.play('click');
         } });
     }
     // Storm Sigils — three attunement pillars along the Stormpeak climb
@@ -281,6 +354,10 @@ const Main = (() => {
       if (F('done_'+s.id)) continue;
       const [a,b] = s.prog();
       html += `<div style="margin-top:5px;color:var(--dim)">◇ ${s.title} <span class="q-prog">${a}/${b}</span></div>`;
+    }
+    if (F('bounty')) {
+      const [a, need] = bountyProgress();
+      html += `<div style="margin-top:5px;color:var(--gold)">📜 ${bountyText(RPG.player.flags.bounty)} <span class="q-prog">${a}/${need}</span></div>`;
     }
     el.innerHTML = html;
   }
@@ -719,6 +796,40 @@ const Main = (() => {
     }
   }
 
+  // ---------- BOUNTY BOARD UI ----------
+  function renderBounty() {
+    const act = ui('bounty-active');
+    const b = RPG.player.flags.bounty;
+    if (b) {
+      const [a, need] = bountyProgress();
+      const ready = a >= need;
+      act.innerHTML = `<div class="bounty-active-card">
+        <div style="color:var(--gold-hi)">ACTIVE CONTRACT</div>
+        <div class="bounty-desc">${bountyText(b)}</div>
+        <div class="bounty-prog-wrap"><div class="bounty-prog-fill" style="width:${Math.min(100, a/need*100)}%"></div></div>
+        <div style="color:var(--dim);font-size:12px">${a}/${need} · pays ◈ ${b.gold} gold + a magic item</div>
+        <button class="btn-primary" id="btn-claim-bounty" ${ready ? '' : 'disabled'}>${ready ? 'CLAIM REWARD' : 'INCOMPLETE'}</button>
+      </div>`;
+      if (ready) ui('btn-claim-bounty').onclick = () => { claimBounty(); renderBounty(); };
+    } else {
+      act.innerHTML = '<div style="color:var(--dim);padding:6px 0">No active contract. Take one below — pay is gold plus a magic item.</div>';
+    }
+    const list = ui('bounty-list');
+    list.innerHTML = '';
+    for (const o of (RPG.player.flags.bountyOffers || [])) {
+      const d = document.createElement('div');
+      d.className = 'bounty-row';
+      d.innerHTML = `<span class="bounty-icon">📜</span>
+        <span class="bounty-name">${bountyText(o)}<span class="sr-desc">pays ◈ ${o.gold} gold + magic item</span></span>`;
+      const btn = document.createElement('button');
+      btn.className = 'btn-secondary'; btn.textContent = 'ACCEPT';
+      btn.disabled = !!RPG.player.flags.bounty;
+      btn.onclick = () => { acceptBounty(o.id); renderBounty(); };
+      d.appendChild(btn);
+      list.appendChild(d);
+    }
+  }
+
   // ---------- MODALS ----------
   function toggleModal(id, show) {
     const m = ui(id);
@@ -845,8 +956,8 @@ const Main = (() => {
       else if (!World.tryInteract()) World.tryPortal();
     }
     if (e.code === 'Escape') {
-      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop'].some(id => !ui(id).classList.contains('hidden'));
-      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop'].forEach(id => toggleModal(id, false));
+      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop','bounty'].some(id => !ui(id).classList.contains('hidden'));
+      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop','bounty'].forEach(id => toggleModal(id, false));
       else {
         const p = ui('pause-menu');
         const show = p.classList.contains('hidden');
