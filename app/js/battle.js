@@ -1,4 +1,4 @@
-/* battle.js — LOD turn-based battles: party-of-3 control, timed Additions, enemy specials */
+/* battle.js — LOD turn-based battles: party-of-3 control, timed Additions, enemy specials, cast anims */
 const Battle = (() => {
   const M = THREE;
   let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
@@ -400,6 +400,15 @@ const Battle = (() => {
 
   let shakeAmt = 0;
   function shake(a){ shakeAmt = Math.max(shakeAmt, a); }
+  function vignette() {
+    const v = ui('vignette'); if (!v) return;
+    v.classList.remove('hit'); void v.offsetWidth; v.classList.add('hit');
+  }
+  function fovPunch() {
+    const base = camera.fov;
+    camera.fov = Math.max(35, base - 5); camera.updateProjectionMatrix();
+    setTimeout(() => { camera.fov = base; camera.updateProjectionMatrix(); }, 110);
+  }
 
   // ---------- PARTY TURN FLOW ----------
   function buildMenu() {
@@ -466,6 +475,7 @@ const Battle = (() => {
         if (isPlayer && playerBuffs.doubleHit) { dmg = Math.round(dmg * 1.8); playerBuffs.doubleHit = false; log('Shadow clone strikes!'); }
         if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
         slashFX(enemyModel, crit);
+        if (crit) fovPunch();
         enemy.hpCur -= dmg;
         UI.floaterAt(project(enemyModel.group.position, 2.2), dmg, crit ? 'crit' : '');
         if (isPlayer && p.lifeLeech > 0) { p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg*p.lifeLeech)); }
@@ -504,6 +514,12 @@ const Battle = (() => {
       elementalFX('arcane', enemyModel);
       log(`${enemy.name} is weakened!`);
     } else { // damage skill
+      if (skill.type !== 'phys') { // cast pose: raise the casting arm
+        const arm = playerModel.armR, st = performance.now();
+        if (arm) (function frame(now){ const t = Math.min(1,(now-st)/350);
+          arm.rotation.x = -Math.sin(t*Math.PI)*2.2;
+          if (t<1) requestAnimationFrame(frame); else arm.rotation.x = 0; })(st);
+      }
       lunge(playerModel, enemyModel, .6);
       await wait(300);
       let mult = skill.mult + skill.per*rank;
@@ -552,6 +568,12 @@ const Battle = (() => {
         log('Bulwark! The party gains +25% defense for 3 turns!'); }
       elementalFX('arcane', model);
     } else {
+      if (isSerah) { // bow draw lean
+        const st = performance.now(), b = model.group;
+        (function frame(now){ const t = Math.min(1,(now-st)/300);
+          b.rotation.x = -Math.sin(t*Math.PI)*.18;
+          if (t<1) requestAnimationFrame(frame); else b.rotation.x = 0; })(st);
+      } else lunge(model, enemyModel, 1.0); // spear thrust
       await projectileFX(model, enemyModel, isSerah ? 0xbfe8ff : 0xffcc66);
       let dmg = ss.attack * skill.mult;
       const crit = Math.random() < (ss.critChance + (skill.critBonus||0));
@@ -559,6 +581,7 @@ const Battle = (() => {
       dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
       if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
       slashFX(enemyModel, crit);
+      if (crit) fovPunch();
       enemy.hpCur -= dmg;
       UI.floaterAt(project(enemyModel.group.position, 2.4), dmg, crit?'crit':'perfect');
       log(`${isSerah?'Serah':'Kael'}'s ${skill.name} hits for ${dmg}${crit?' — CRITICAL!':''}`);
@@ -662,7 +685,7 @@ const Battle = (() => {
     if (tgt === 'serah') p.serah.hp -= dmg;
     else if (tgt === 'kael') p.kael.hp -= dmg;
     else p.hp -= dmg;
-    AudioSys.play('playerHurt'); shake(.5);
+    AudioSys.play('playerHurt'); shake(.5); vignette();
     UI.floaterAt(project(T.model.group.position, 2.1), dmg, '');
     log(`${enemy.name} ${verb} ${label} for ${dmg}.`);
     if (tgt === 'serah' && p.serah.hp <= 0) { p.serah.hp = 0; serahKO = true; collapseAlly(allyModel, 'Serah'); }
