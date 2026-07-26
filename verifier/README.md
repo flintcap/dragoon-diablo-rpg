@@ -45,3 +45,13 @@ polish.css was never linked in index.html (v3 styles silently inactive). Differs
 first party member added to an existing zone (retro-content), first caster ally, first save
 migration. Run logged at verifier/runs/2026-07-27-lyra-pyromancer.md — all PASS,
 Act-I + Stormpeak regressions green.
+
+## v6 — 2026-07-27
+Measures: Battle Animation 2.0 — escalating per-beat Addition impacts (chain-scaled spark
+bursts, PERFECT ring + FOV punch, arc per beat), Dragoon transformation cinematic (camera
+push-in, spirit pillar, shockwaves, feather burst, transform SFX), per-family enemy death
+animations (wraith dissolve / golem debris / wolf crumple / humanoid stagger + boss
+shockwave), kind-specific attack sounds. Caught & fixed a critical pre-existing turn-cycle
+bug: Serah-only parties locked the player out of all future turns. Differs from prior: first
+pass purely on battle feel; first bug found by probing live turn state over time. Run logged
+at verifier/runs/2026-07-27-battle-fx-2.md — all PASS, all three regressions green.
