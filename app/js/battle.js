@@ -29,6 +29,23 @@ const Battle = (() => {
     const ring = new M.Mesh(new M.TorusGeometry(11.5, .18, 8, 48),
       new M.MeshBasicMaterial({ color: 0x3a7bd5 }));
     ring.rotation.x = Math.PI/2; ring.position.y = .32; scene.add(ring);
+    // concentric inlays + center emblem + radial cracks
+    for (const [r, col] of [[8, 0x24508a], [4.5, 0x1d4a70]]) {
+      const inl = new M.Mesh(new M.TorusGeometry(r, .08, 6, 48),
+        new M.MeshBasicMaterial({ color: col, transparent:true, opacity:.8 }));
+      inl.rotation.x = Math.PI/2; inl.position.y = .31; scene.add(inl);
+    }
+    const emblem = new M.Mesh(new M.CircleGeometry(1.6, 24),
+      new M.MeshBasicMaterial({ color: 0x2a5a9a, transparent:true, opacity:.5 }));
+    emblem.rotation.x = -Math.PI/2; emblem.position.y = .31; scene.add(emblem);
+    for (let i=0;i<8;i++){
+      const a = i/8*Math.PI*2 + .35;
+      const crack = new M.Mesh(new M.PlaneGeometry(rnd(2,4.5), rnd(.06,.14)),
+        new M.MeshBasicMaterial({ color: 0x05070c, transparent:true, opacity:.8 }));
+      crack.rotation.x = -Math.PI/2; crack.rotation.z = a + rnd(-.2,.2);
+      crack.position.set(Math.cos(a)*rnd(4,9), .315, Math.sin(a)*rnd(4,9));
+      scene.add(crack);
+    }
     // rune glyphs
     for (let i=0;i<10;i++){
       const a = i/10*Math.PI*2;
@@ -51,7 +68,7 @@ const Battle = (() => {
     const geo = new M.BufferGeometry(); const n = 120; const pts = new Float32Array(n*3);
     for (let i=0;i<n;i++){ pts[i*3]=rnd(-15,15); pts[i*3+1]=rnd(0,10); pts[i*3+2]=rnd(-15,15); }
     geo.setAttribute('position', new M.BufferAttribute(pts, 3));
-    scene.userData.embers = new M.Points(geo, new M.PointsMaterial({ color:0x7ec8ff, size:.12,
+    scene.userData.embers = new M.Points(geo, new M.PointsMaterial({ color:0x7ec8ff, size:.16, map:World.getDotTexture ? World.getDotTexture() : null,
       transparent:true, opacity:.7, blending:M.AdditiveBlending, depthWrite:false }));
     scene.add(scene.userData.embers);
   }
@@ -73,10 +90,10 @@ const Battle = (() => {
     playerModel.group.position.set(-4.5, .3, -1); playerModel.group.rotation.y = Math.PI/2;
     scene.add(playerModel.group);
     // Serah the Wingly — AI companion
-    allyModel = buildRig(0x9fd4ff, false, .88);
+    allyModel = buildRig(0x9fd4ff, false, .88, true);
     allyModel.group.position.set(-5.5, .3, 2.2); allyModel.group.rotation.y = Math.PI/2;
     scene.add(allyModel.group);
-    enemyModel = WorldBuild(enemy.color, true, enemy.scale * (enemy.boss?1.6:1.3));
+    enemyModel = World.makeEnemyModel(enemy, enemy.scale * (enemy.boss?1.6:1.3));
     enemyModel.group.position.set(4.5, .3, 0); enemyModel.group.rotation.y = -Math.PI/2;
     scene.add(enemyModel.group);
     if (enemy.boss) {
@@ -88,6 +105,13 @@ const Battle = (() => {
     if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed || 0) < 3) {
       setTimeout(() => { if (active) log(`⚠ ${enemy.name} is shielded by the Shadow Anchors — destroy them at the shrine! (damage greatly reduced)`); }, 1400);
     }
+
+    // boss HP bar
+    if (enemy.boss) {
+      ui('boss-bar').classList.remove('hidden');
+      ui('boss-name').textContent = enemy.name.toUpperCase();
+      lastBossHp = -1;
+    } else ui('boss-bar').classList.add('hidden');
 
     camera.position.set(0, 6.5, 12.5); camera.lookAt(0, 1.4, 0);
     update(0.016); // render one battle frame immediately so no world frame lingers
@@ -102,6 +126,7 @@ const Battle = (() => {
 
   function end(victory) {
     active = false; ringState = null;
+    ui('boss-bar').classList.add('hidden');
     ui('battle-ui').classList.add('hidden');
     ui('battle-menu').classList.add('hidden');
     ui('battle-submenu').classList.add('hidden');
@@ -243,7 +268,9 @@ const Battle = (() => {
       model.armR && (model.armR.rotation.x = -Math.sin(k*Math.PI)*2*power);
       model.sword && (model.sword.rotation.z = -.4 - Math.sin(k*Math.PI)*1.6*power);
       if (t < 1) requestAnimationFrame(frame);
-      else { model.group.position.copy(from); model.armR.rotation.x = 0; model.sword.rotation.z = -.4; }
+      else { model.group.position.copy(from);
+        if (model.armR) model.armR.rotation.x = 0;
+        if (model.sword) model.sword.rotation.z = -.4; }
     })(performance.now());
   }
 
@@ -630,10 +657,14 @@ const Battle = (() => {
   }
   function onResize(){ if (camera){ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); } }
 
-  let t = 0;
+  let t = 0, lastBossHp = -1;
   function update(dt) {
     if (!active || !scene) return;
     t += dt;
+    if (enemy && enemy.boss && enemy.hpCur !== lastBossHp) {
+      lastBossHp = enemy.hpCur;
+      ui('boss-fill').style.width = Math.max(0, enemy.hpCur/enemy.maxHp*100) + '%';
+    }
     // idle anims
     if (playerModel) playerModel.body.position.y = Math.sin(t*2.2)*.04;
     if (allyModel) allyModel.body.position.y = Math.sin(t*2.6+.7)*.05;
@@ -674,7 +705,7 @@ const Battle = (() => {
     // build a fresh rig in the player's colors (models aren't shared across scenes)
     return buildRig(RPG.CLASSES[RPG.player.cls].color, false, 1);
   }
-  function buildRig(color, isEnemy, scale) {
+  function buildRig(color, isEnemy, scale, isAlly=false) {
     const g = new M.Group(); const body = new M.Group();
     const c = new M.MeshStandardMaterial({ color, roughness:.6, metalness:.25 });
     const torso = new M.Mesh(new M.CylinderGeometry(.34*scale,.42*scale,.9*scale,8), c);
@@ -698,6 +729,30 @@ const Battle = (() => {
       new M.MeshStandardMaterial({ color:0xd4af37, metalness:.8, roughness:.4 }));
     sword.add(guard);
     sword.position.set(.6*scale,1.15*scale,0); sword.rotation.z=-.4; body.add(sword);
+    if (!isEnemy && !isAlly && RPG.player) {
+      const cls = RPG.player.cls;
+      if (cls === 'knight') {
+        const cape = new M.Mesh(new M.PlaneGeometry(.85*scale, 1.15*scale),
+          new M.MeshStandardMaterial({ color: 0x7a1a1a, roughness:.9, side:M.DoubleSide }));
+        cape.position.set(0, 1.1*scale, -.3*scale); cape.rotation.x = .18; body.add(cape);
+        for (const side of [-1,1]) {
+          const paul = new M.Mesh(new M.SphereGeometry(.18*scale, 8, 6, 0, Math.PI*2, 0, Math.PI/2),
+            new M.MeshStandardMaterial({ color:0xd4af37, metalness:.8, roughness:.4 }));
+          paul.position.set(side*.48*scale, 1.52*scale, 0); body.add(paul);
+        }
+      } else if (cls === 'rogue') {
+        const hood = new M.Mesh(new M.ConeGeometry(.34*scale, .42*scale, 8),
+          new M.MeshStandardMaterial({ color:0x2a1a3a, roughness:.85 }));
+        hood.position.y = 2*scale; body.add(hood);
+      } else if (cls === 'sorceress') {
+        const hat = new M.Mesh(new M.ConeGeometry(.42*scale, .55*scale, 9),
+          new M.MeshStandardMaterial({ color:0x1a3a5c, roughness:.85 }));
+        hat.position.y = 2.25*scale; body.add(hat);
+        const brim = new M.Mesh(new M.CylinderGeometry(.55*scale, .55*scale, .05*scale, 12),
+          new M.MeshStandardMaterial({ color:0x1a3a5c, roughness:.85 }));
+        brim.position.y = 2*scale; body.add(brim);
+      }
+    }
     if (isEnemy) { // glowing eyes
       for (const side of [-1,1]) {
         const eye = new M.Mesh(new M.SphereGeometry(.05*scale,6,6),
