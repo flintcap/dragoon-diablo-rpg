@@ -1,7 +1,7 @@
 /* battle.js — Legend of Dragoon-style turn-based battles with timed Addition combos */
 const Battle = (() => {
   const M = THREE;
-  let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null;
+  let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
   let turn = 'player', animQueue = Promise.resolve(), spiritGainMult = 1;
   let dragoonTurns = 0, dots = [], enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
   let playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
@@ -68,9 +68,14 @@ const Battle = (() => {
     // clear old models
     if (playerModel) scene.remove(playerModel.group);
     if (enemyModel) scene.remove(enemyModel.group);
+    if (allyModel) scene.remove(allyModel.group);
     playerModel = WorldBuild(RPG.CLASSES[RPG.player.cls].color, false, 1);
-    playerModel.group.position.set(-4.5, .3, 0); playerModel.group.rotation.y = Math.PI/2;
+    playerModel.group.position.set(-4.5, .3, -1); playerModel.group.rotation.y = Math.PI/2;
     scene.add(playerModel.group);
+    // Serah the Wingly — AI companion
+    allyModel = buildRig(0x9fd4ff, false, .88);
+    allyModel.group.position.set(-5.5, .3, 2.2); allyModel.group.rotation.y = Math.PI/2;
+    scene.add(allyModel.group);
     enemyModel = WorldBuild(enemy.color, true, enemy.scale * (enemy.boss?1.6:1.3));
     enemyModel.group.position.set(4.5, .3, 0); enemyModel.group.rotation.y = -Math.PI/2;
     scene.add(enemyModel.group);
@@ -78,6 +83,11 @@ const Battle = (() => {
       const aura = new M.PointLight(0x8833ff, 1.6, 14); aura.position.y = 2.5; enemyModel.group.add(aura);
     }
     enemy.hpCur = enemy.hp;
+
+    // herald shield hint
+    if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed || 0) < 3) {
+      setTimeout(() => { if (active) log(`⚠ ${enemy.name} is shielded by the Shadow Anchors — destroy them at the shrine! (damage greatly reduced)`); }, 1400);
+    }
 
     camera.position.set(0, 6.5, 12.5); camera.lookAt(0, 1.4, 0);
     update(0.016); // render one battle frame immediately so no world frame lingers
@@ -212,7 +222,12 @@ const Battle = (() => {
     oneBeat();
   }
 
-  function pressAddition() { if (ringState && ringState.judge) ringState.judge(); }
+  function pressAddition() {
+    if (ringState && ringState.judge) {
+      if (window.__autoPerfect) ringState.t = 1; // test hook: force PERFECT timing
+      ringState.judge();
+    }
+  }
 
   // ---------- ANIMATION HELPERS ----------
   function lunge(model, target, power=1) {
@@ -265,6 +280,45 @@ const Battle = (() => {
   let shakeAmt = 0;
   function shake(a){ shakeAmt = Math.max(shakeAmt, a); }
 
+  // ---------- ALLY (Serah) ----------
+  async function allyPhase() {
+    if (!active || !allyModel) { enemyTurn(); return; }
+    await wait(500);
+    if (!active) return;
+    const p = RPG.player;
+    if (p.hp < p.maxHp * .35) {
+      // Wingly healing light
+      const amt = Math.round(p.maxHp * .22);
+      p.hp = Math.min(p.maxHp, p.hp + amt);
+      elementalFX('ice', allyModel);
+      AudioSys.play('heal');
+      UI.floaterAt(project(playerModel.group.position, 2.2), '+'+amt, 'perfect');
+      log(`Serah casts Wingly Light — you recover ${amt} HP.`);
+      UI.refreshHUD();
+      await wait(600);
+      enemyTurn(); return;
+    }
+    // attack with her own addition (auto 1–3 hits)
+    const hits = 1 + (Math.random()<.55?1:0) + (Math.random()<.25?1:0);
+    lunge(allyModel, enemyModel, .5);
+    await wait(320);
+    let dmg = Math.round(p.attack * .28 * hits * rnd(.9,1.1));
+    const crit = Math.random() < p.critChance * .7;
+    if (crit) dmg = Math.round(dmg * p.critMult);
+    dmg = Math.max(1, dmg);
+    if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
+    impactFX(enemyModel, crit);
+    AudioSys.play('hit');
+    enemy.hpCur -= dmg;
+    UI.floaterAt(project(enemyModel.group.position, 2.0), dmg, crit?'crit':'');
+    log(`Serah lands a ${hits}-hit addition for ${dmg}${crit?' — CRITICAL!':''}.`);
+    p.spirit = Math.min(100, p.spirit + 2 * hits);
+    UI.refreshHUD();
+    await wait(500);
+    if (checkEnemyDead()) return;
+    enemyTurn();
+  }
+
   // ---------- PLAYER ACTIONS ----------
   async function doAttack() {
     hideMenu();
@@ -279,6 +333,7 @@ const Battle = (() => {
         if (crit) dmg *= p.critMult;
         dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
         if (playerBuffs.doubleHit) { dmg = Math.round(dmg * 1.8); playerBuffs.doubleHit = false; log('Shadow clone strikes!'); }
+        if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
         enemy.hpCur -= dmg;
         UI.floaterAt(project(enemyModel.group.position, 2.2), dmg, crit ? 'crit' : '');
         if (p.lifeLeech > 0) { p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg*p.lifeLeech)); }
@@ -286,7 +341,7 @@ const Battle = (() => {
         await wait(650);
         if (checkEnemyDead()) return;
       } else log('The Addition failed — no damage!');
-      enemyTurn();
+      allyPhase();
     });
   }
 
@@ -326,6 +381,7 @@ const Battle = (() => {
       if (crit) dmg *= p.critMult;
       if (playerBuffs.empower) { dmg *= 1.5; playerBuffs.empower = false; }
       dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
+      if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
       elementalFX(skill.type, enemyModel);
       enemy.hpCur -= dmg;
       UI.floaterAt(project(enemyModel.group.position, 2.4), dmg, crit?'crit':'perfect');
@@ -337,7 +393,7 @@ const Battle = (() => {
       await wait(700);
       if (checkEnemyDead()) return;
     }
-    enemyTurn();
+    allyPhase();
   }
 
   async function doItem(kind) {
@@ -350,7 +406,7 @@ const Battle = (() => {
       UI.floaterAt(project(playerModel.group.position, 2.2), '+'+amt, 'perfect'); log(`Healing potion restores ${amt} HP.`); }
     else { const amt = Math.round(p.maxMp*.4); p.mp = Math.min(p.maxMp, p.mp+amt); log(`Mana potion restores ${amt} MP.`); }
     UI.refreshHUD();
-    await wait(500); enemyTurn();
+    await wait(500); allyPhase();
   }
 
   async function doDefend() {
@@ -359,7 +415,7 @@ const Battle = (() => {
     RPG.player.spirit = Math.min(100, RPG.player.spirit + 12); UI.refreshHUD();
     elementalFX('ice', playerModel);
     log('You brace for impact. (+12% spirit)');
-    await wait(450); enemyTurn();
+    await wait(450); allyPhase();
   }
 
   // ---------- DRAGOON FORM ----------
@@ -415,6 +471,30 @@ const Battle = (() => {
     await wait(700);
     if (!active) return;
     const p = RPG.player;
+
+    // ---- phase transitions ----
+    if (enemy.hpCur > 0) {
+      if (enemy.phase2 && !enemy.phase2Done && enemy.hpCur < enemy.maxHp * .5) {
+        enemy.phase2Done = true;
+        enemy.dmg = Math.round(enemy.dmg * enemy.phase2.dmgMult);
+        enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct));
+        banner(enemy.phase2.name);
+        AudioSys.play('dragoon');
+        enemyModel.group.traverse(o => { if (o.material && o.material.emissive !== undefined) { o.material.emissive = new M.Color(enemy.phase2.color); o.material.emissiveIntensity = .8; } });
+        const aura2 = new M.PointLight(0xff2222, 2.2, 16); aura2.position.y = 3; enemyModel.group.add(aura2);
+        enemyModel.group.scale.multiplyScalar(1.15);
+        log('The shadow peels away — the Dragon Avatar stands revealed! Its power surges.');
+        shake(1);
+        await wait(1800);
+      } else if (enemy.enrage && !enemy.enraged && enemy.hpCur < enemy.maxHp * enemy.enrage.at) {
+        enemy.enraged = true;
+        enemy.dmg = Math.round(enemy.dmg * enemy.enrage.dmgMult);
+        banner('⚠ ' + enemy.name.toUpperCase() + ' ENRAGES ⚠');
+        AudioSys.play('encounter');
+        log(`${enemy.name} thrashes into a frenzy — its blows grow savage!`);
+        await wait(900);
+      }
+    }
 
     // DOT ticks on enemy
     for (const d of dots) {
@@ -556,6 +636,7 @@ const Battle = (() => {
     t += dt;
     // idle anims
     if (playerModel) playerModel.body.position.y = Math.sin(t*2.2)*.04;
+    if (allyModel) allyModel.body.position.y = Math.sin(t*2.6+.7)*.05;
     if (enemyModel && enemy.hpCur > 0) enemyModel.body.position.y = Math.sin(t*2.8+1)*.06;
     if (dragoonWings) dragoonWings.rotation.x = Math.sin(t*6)*.25;
     scene.userData.embers.rotation.y += dt*.05;
