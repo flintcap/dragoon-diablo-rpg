@@ -264,6 +264,8 @@ const Main = (() => {
   window.UI = {
     refreshHUD() {
       const p = RPG.player; if (!p) return;
+      const glyph = { knight:'⚔', rogue:'🗡', sorceress:'✦' }[p.cls];
+      if (ui('portrait-face').textContent !== glyph) ui('portrait-face').textContent = glyph;
       ui('hud-name').textContent = `${p.name}`;
       ui('hp-fill').style.width = Math.max(0, p.hp/p.maxHp*100) + '%';
       ui('hp-text').textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
@@ -427,12 +429,35 @@ const Main = (() => {
     const val = pct ? Math.round(a.v*100) : a.v;
     return `+${val}${AFFIX_LABEL[a.stat]||a.stat}`;
   }
-  function itemTooltip(item, e) {
+  function compareHtml(item) {
+    const p = RPG.player;
+    const slot = item.slot === 'ring' ? (p.equip.ring1 ? 'ring1' : 'ring1') : item.slot;
+    const eq = p.equip[slot] || (item.slot === 'ring' ? p.equip.ring2 : null);
+    if (!eq || eq === item) return '';
+    let html = '<div class="tt-cmp"><div class="tt-cmp-title">EQUIPPED</div>';
+    html += `<div class="rarity-${eq.rarity}">${eq.icon} ${eq.name}</div>`;
+    if (item.dmg || eq.dmg) {
+      const mine = item.dmg ? (item.dmg[0]+item.dmg[1])/2 : 0;
+      const theirs = eq.dmg ? (eq.dmg[0]+eq.dmg[1])/2 : 0;
+      const d = Math.round((mine-theirs)*10)/10;
+      html += `<div>Damage: ${mine}${theirs?` <span class="${d>=0?'tt-better':'tt-worse'}">(${d>=0?'+':''}${d})</span>`:''}</div>`;
+    }
+    if (item.def || eq.def) {
+      const d = (item.def||0)-(eq.def||0);
+      html += `<div>Defense: ${item.def||0} <span class="${d>=0?'tt-better':'tt-worse'}">(${d>=0?'+':''}${d})</span></div>`;
+    }
+    const mineAff = (item.affixes||[]).length, theirAff = (eq.affixes||[]).length;
+    if (mineAff !== theirAff) html += `<div class="${mineAff>theirAff?'tt-better':'tt-worse'}">${mineAff-theirAff>0?'+':''}${mineAff-theirAff} affixes</div>`;
+    return html + '</div>';
+  }
+  function itemTooltip(item, e, fromEquip=false) {
     const tip = ui('item-tooltip');
     const base = item.dmg ? `<div>Damage: ${item.dmg[0]}–${item.dmg[1]}</div>` : item.def ? `<div>Defense: ${item.def}</div>` : '';
+    const cmp = fromEquip ? '' : compareHtml(item);
     tip.innerHTML = `<h4 class="rarity-${item.rarity}">${item.icon} ${item.name}</h4>
       <div style="color:var(--dim);font-size:11px">${item.rarity.toUpperCase()} ${item.slot.toUpperCase()} · ilvl ${item.level}</div>
       ${base}${item.affixes.map(a=>`<div class="tt-affix">${affixText(a)}</div>`).join('')}
+      ${cmp}
       <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}</div>`;
     tip.classList.remove('hidden');
     tip.style.left = Math.min(innerWidth-290, e.clientX+14) + 'px';
@@ -449,8 +474,8 @@ const Main = (() => {
       d.innerHTML = `${labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
       if (it) {
         d.style.borderStyle = 'solid';
-        d.onmouseenter = e => itemTooltip(it, e);
-        d.onmousemove = e => itemTooltip(it, e);
+        d.onmouseenter = e => itemTooltip(it, e, true);
+        d.onmousemove = e => itemTooltip(it, e, true);
         d.onmouseleave = () => ui('item-tooltip').classList.add('hidden');
         d.onclick = () => {
           if (p.inventory.length >= 24) { toast('Backpack full!'); return; }
@@ -523,10 +548,29 @@ const Main = (() => {
       UI.refreshHUD(); toWorld();
     };
   }
+  const ZONE_META = {
+    forest: { act: 'ACT I', name: 'WHISPERWOOD' },
+    grotto: { act: 'BENEATH THE SHRINE', name: 'THE SUNKEN GROTTO' },
+    crater: { act: 'THE END OF ACT I', name: 'THE STAR CRATER' },
+  };
+  function showZoneTitle(zone) {
+    const m = ZONE_META[zone]; if (!m) return;
+    ui('zone-title-act').textContent = m.act;
+    ui('zone-title-name').textContent = m.name;
+    const z = ui('zone-title');
+    z.classList.remove('hidden', 'show'); void z.offsetWidth;
+    z.classList.add('show');
+  }
+  function fadePulse() {
+    const f = ui('fade-overlay');
+    f.classList.add('on');
+    setTimeout(()=> f.classList.remove('on'), 420);
+  }
   function onZoneChanged(zone) {
     if (zone === 'grotto') Fset('enteredGrotto');
     objSig = ''; // force object resync in new zone
     refreshQuest(); resyncObjects(true);
+    showZoneTitle(zone); fadePulse();
   }
 
   // ---------- BOOT ----------
@@ -561,6 +605,7 @@ const Main = (() => {
     ui('intro-screen').classList.add('hidden');
     ui('hud').classList.remove('hidden');
     UI.refreshHUD(); refreshQuest(); resyncObjects(true);
+    showZoneTitle('forest');
     toast(`<b>Act I — The Fallen Star</b>`);
     setTimeout(()=> toast('<i>Serah: "Fiends first, questions after. Move!"</i>'), 2500);
     setTimeout(()=> toast('Press <b>J</b> for your quest log'), 6000);
