@@ -1,4 +1,4 @@
-/* main.js — bootstrap, state machine, quest engine, all UI wiring */
+/* main.js — bootstrap, state machine, quest engine, NPC dialogue, shops, all UI wiring */
 const Main = (() => {
   let state = 'title'; // title | world | battle | paused
   let lastT = performance.now();
@@ -458,7 +458,7 @@ const Main = (() => {
       <div style="color:var(--dim);font-size:11px">${item.rarity.toUpperCase()} ${item.slot.toUpperCase()} · ilvl ${item.level}</div>
       ${base}${item.affixes.map(a=>`<div class="tt-affix">${affixText(a)}</div>`).join('')}
       ${cmp}
-      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}</div>`;
+      <div class="tt-hint">${RPG.player.equip[item.slot]===item || RPG.player.equip.ring1===item || RPG.player.equip.ring2===item ? 'Click to unequip' : 'Click to equip'}${item.slot==='weapon'?' · Shift+Click → Serah':''}</div>`;
     tip.classList.remove('hidden');
     tip.style.left = Math.min(innerWidth-290, e.clientX+14) + 'px';
     tip.style.top = Math.max(8, e.clientY-10) + 'px';
@@ -468,10 +468,10 @@ const Main = (() => {
     const slots = ['weapon','armor','helm','boots','amulet','ring1','ring2','charm'];
     const labels = { weapon:'Weapon', armor:'Armor', helm:'Helm', boots:'Boots', amulet:'Amulet', ring1:'Ring', ring2:'Ring', charm:'Charm' };
     const wrap = ui('equip-slots'); wrap.innerHTML = '';
-    for (const s of slots) {
+    for (const s of slots.concat(['serahWeapon'])) {
       const d = document.createElement('div'); d.className = 'equip-slot';
-      const it = p.equip[s];
-      d.innerHTML = `${labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
+      const it = s === 'serahWeapon' ? p.serah.weapon : p.equip[s];
+      d.innerHTML = `${s==='serahWeapon'?'🏹 Serah':labels[s]}${it? `<span class="eq-name rarity-${it.rarity}">${it.icon} ${it.name}</span>`:'<span class="eq-name" style="color:#333d55">—</span>'}`;
       if (it) {
         d.style.borderStyle = 'solid';
         d.onmouseenter = e => itemTooltip(it, e, true);
@@ -479,8 +479,10 @@ const Main = (() => {
         d.onmouseleave = () => ui('item-tooltip').classList.add('hidden');
         d.onclick = () => {
           if (p.inventory.length >= 24) { toast('Backpack full!'); return; }
-          p.inventory.push(it); p.equip[s] = null;
+          p.inventory.push(it);
+          if (s === 'serahWeapon') p.serah.weapon = null; else p.equip[s] = null;
           RPG.recalc(); AudioSys.play('click'); UI.refreshInv(); renderCharSheet();
+          if (World.refreshPlayerGear) World.refreshPlayerGear();
         };
       }
       wrap.appendChild(d);
@@ -496,14 +498,22 @@ const Main = (() => {
       d.onmouseenter = e => itemTooltip(it, e);
       d.onmousemove = e => itemTooltip(it, e);
       d.onmouseleave = () => ui('item-tooltip').classList.add('hidden');
-      d.onclick = () => {
-        const slot = it.slot === 'ring' ? (p.equip.ring1 ? (p.equip.ring2 ? 'ring1' : 'ring2') : 'ring1') : it.slot;
-        const old = p.equip[slot];
-        p.equip[slot] = it; p.inventory.splice(idx, 1);
-        if (old) p.inventory.push(old);
+      d.onclick = (ev) => {
+        if (ev.shiftKey && it.slot === 'weapon') {
+          const oldS = p.serah.weapon;
+          p.serah.weapon = it; p.inventory.splice(idx, 1);
+          if (oldS) p.inventory.push(oldS);
+          toast(`Serah equips <b class="rarity-${it.rarity}">${it.name}</b>`);
+        } else {
+          const slot = it.slot === 'ring' ? (p.equip.ring1 ? (p.equip.ring2 ? 'ring1' : 'ring2') : 'ring1') : it.slot;
+          const old = p.equip[slot];
+          p.equip[slot] = it; p.inventory.splice(idx, 1);
+          if (old) p.inventory.push(old);
+        }
         RPG.recalc(); AudioSys.play('loot');
         ui('item-tooltip').classList.add('hidden');
         UI.refreshInv(); renderCharSheet();
+        if (World.refreshPlayerGear) World.refreshPlayerGear();
       };
       wrap.appendChild(d);
     });
@@ -514,6 +524,118 @@ const Main = (() => {
         d.onclick = () => hotbarUse({ potion: kind });
         wrap.appendChild(d);
       }
+    }
+  }
+
+  // ---------- NPC DIALOGUE ----------
+  const MAERA_LINES = {
+    1: 'So the Spirit woke in you after all. The fiends are only the beginning — the shrine whispers a name I hoped never to hear again.',
+    2: 'The old trial still works, I see. The crystals remember their verse even if the village forgot.',
+    3: 'Child, do NOT face the Herald while its anchors stand. Break them, and its shield breaks with them.',
+    4: 'Down in the Grotto, the relics of my order lie drowned. The Tyrant will trade blood for them. It always does.',
+    5: 'The Tyrant has surfaced at last. Strike true, and mind its frenzy when it bleeds.',
+    6: 'Only the Star Key can open the crater. Herald\'s ember, Tyrant\'s trophy, and a shard of the Star itself — you know where you woke, child.',
+    7: 'You did what three generations of this village could not. The Hollow owes you its dawn.',
+  };
+  let currentNPC = null;
+  function openDialogue(npc) {
+    currentNPC = npc;
+    ui('dlg-name').textContent = npc.name;
+    ui('dlg-role').textContent = npc.role.toUpperCase();
+    let line;
+    if (npc.id === 'maera') line = MAERA_LINES[Math.min(7, getQuestStage())] || MAERA_LINES[7];
+    else line = npc.lines[Math.floor(Math.random()*npc.lines.length)];
+    ui('dlg-text').textContent = '“' + line + '”';
+    ui('dlg-shop').classList.toggle('hidden', !npc.shop);
+    toggleModal('dialogue', true);
+    AudioSys.play('click');
+  }
+  ui('dlg-leave').onclick = () => toggleModal('dialogue', false);
+  ui('dlg-shop').onclick = () => {
+    toggleModal('dialogue', false);
+    openShop(currentNPC);
+  };
+
+  // ---------- SHOPS ----------
+  const SHOP_DEFS = {
+    general: { title: "Bertram's General Goods", stock: () => [
+      potionRow('hp', 30), potionRow('mp', 35),
+      gearRow('magic'), gearRow('magic'),
+    ]},
+    smith: { title: "Yara's Smithy", stock: () => [
+      gearRow('magic', 'weapon'), gearRow('magic', 'armor'), gearRow('magic', 'helm'),
+      ...(RPG.player.level >= 5 ? [gearRow('rare')] : []),
+    ]},
+    alch: { title: "Fenn's Alchemy", stock: () => [
+      potionRow('hp', 25), potionRow('mp', 30), spiritRow(60),
+      gearRow('magic', 'amulet'), gearRow('magic', 'ring'),
+    ]},
+  };
+  function gearPrice(it) {
+    const mult = { normal:1, magic:2.2, rare:5, unique:12 }[it.rarity] || 1;
+    return Math.round(it.level * 8 * mult + (it.affixes?.length||0) * 15 * mult);
+  }
+  function potionRow(kind, price) {
+    return { icon: kind==='hp'?'🧪':'🔷', name: kind==='hp'?'Healing Potion':'Mana Potion',
+      desc:'Restores 40% ' + (kind==='hp'?'HP':'MP'), price,
+      buy: () => { RPG.player.potions[kind]++; } };
+  }
+  function spiritRow(price) {
+    return { icon:'💜', name:'Spirit Draught', desc:'+25% Dragoon Spirit instantly', price,
+      buy: () => { RPG.player.spirit = Math.min(100, RPG.player.spirit + 25); } };
+  }
+  function gearRow(rarity, slot=null) {
+    const it = RPG.genItem(RPG.player.level + 1, rarity, slot);
+    return { icon: it.icon, name: it.name, rarity: it.rarity, item: it,
+      desc: (it.dmg ? `Damage ${it.dmg[0]}–${it.dmg[1]}` : it.def ? `Defense ${it.def}` : it.slot) +
+            (it.affixes.length ? ` · ${it.affixes.length} affix${it.affixes.length>1?'es':''}` : ''),
+      price: gearPrice(it),
+      buy: () => { if (RPG.player.inventory.length < 24) RPG.player.inventory.push(it); else toast('Backpack full!'); }
+  };
+  }
+  let shopMode = 'buy', shopNPC = null;
+  function openShop(npc) {
+    shopNPC = npc; shopMode = 'buy';
+    ui('shop-title').firstChild.textContent = SHOP_DEFS[npc.shop].title + ' ';
+    renderShop();
+    toggleModal('shop', true);
+    AudioSys.play('gold');
+  }
+  ui('tab-buy').onclick = () => { shopMode = 'buy'; renderShop(); };
+  ui('tab-sell').onclick = () => { shopMode = 'sell'; renderShop(); };
+  function renderShop() {
+    const p = RPG.player;
+    ui('shop-gold').textContent = `◈ ${p.gold} gold`;
+    ui('tab-buy').classList.toggle('active', shopMode==='buy');
+    ui('tab-sell').classList.toggle('active', shopMode==='sell');
+    const list = ui('shop-list'); list.innerHTML = '';
+    if (shopMode === 'buy') {
+      for (const row of SHOP_DEFS[shopNPC.shop].stock()) {
+        const d = document.createElement('div'); d.className = 'shop-row';
+        const cant = p.gold < row.price;
+        d.innerHTML = `<span class="sr-icon">${row.icon}</span>
+          <span class="sr-name ${row.rarity?('rarity-'+row.rarity):''}">${row.name}<span class="sr-desc">${row.desc}</span></span>
+          <span class="sr-price ${cant?'cant':''}">◈ ${row.price}</span>`;
+        const b = document.createElement('button');
+        b.className = 'btn-secondary'; b.textContent = 'BUY'; b.disabled = cant;
+        b.onclick = () => { p.gold -= row.price; row.buy(); AudioSys.play('loot'); UI.refreshHUD(); UI.refreshInv(); renderShop(); };
+        d.appendChild(b);
+        list.appendChild(d);
+      }
+    } else {
+      if (!p.inventory.length) list.innerHTML = '<div style="color:var(--dim);padding:12px">Nothing to sell.</div>';
+      p.inventory.forEach((it, idx) => {
+        const price = Math.max(1, Math.round(gearPrice(it) * .4));
+        const d = document.createElement('div'); d.className = 'shop-row';
+        d.innerHTML = `<span class="sr-icon">${it.icon}</span>
+          <span class="sr-name rarity-${it.rarity}">${it.name}<span class="sr-desc">${it.rarity} ${it.slot}</span></span>
+          <span class="sr-price">◈ ${price}</span>`;
+        const b = document.createElement('button');
+        b.className = 'btn-secondary'; b.textContent = 'SELL';
+        b.onclick = () => { p.inventory.splice(idx,1); p.gold += price; AudioSys.play('gold'); UI.refreshInv(); renderShop(); };
+        d.appendChild(b);
+        list.appendChild(d);
+      });
     }
   }
 
@@ -550,6 +672,7 @@ const Main = (() => {
   }
   const ZONE_META = {
     forest: { act: 'ACT I', name: 'WHISPERWOOD' },
+    town: { act: 'SAFE HAVEN', name: 'MIREWOOD HOLLOW' },
     grotto: { act: 'BENEATH THE SHRINE', name: 'THE SUNKEN GROTTO' },
     crater: { act: 'THE END OF ACT I', name: 'THE STAR CRATER' },
   };
@@ -605,6 +728,7 @@ const Main = (() => {
     ui('intro-screen').classList.add('hidden');
     ui('hud').classList.remove('hidden');
     UI.refreshHUD(); refreshQuest(); resyncObjects(true);
+    if (World.refreshPlayerGear) World.refreshPlayerGear();
     showZoneTitle('forest');
     toast(`<b>Act I — The Fallen Star</b>`);
     setTimeout(()=> toast('<i>Serah: "Fiends first, questions after. Move!"</i>'), 2500);
@@ -632,10 +756,14 @@ const Main = (() => {
     if (e.code === 'KeyJ') toggleModal('quest-log');
     if (e.code === 'KeyQ') hotbarUse({ potion:'hp' });
     if (e.code === 'KeyR') hotbarUse({ potion:'mp' });
-    if (e.code === 'KeyE') { if (!World.tryInteract()) World.tryPortal(); }
+    if (e.code === 'KeyE') {
+      const npc = World.nearNPC && World.nearNPC();
+      if (npc) openDialogue(npc);
+      else if (!World.tryInteract()) World.tryPortal();
+    }
     if (e.code === 'Escape') {
-      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log'].some(id => !ui(id).classList.contains('hidden'));
-      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log'].forEach(id => toggleModal(id, false));
+      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop'].some(id => !ui(id).classList.contains('hidden'));
+      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop'].forEach(id => toggleModal(id, false));
       else {
         const p = ui('pause-menu');
         const show = p.classList.contains('hidden');
@@ -663,9 +791,13 @@ const Main = (() => {
   }
   function updateInteractHint() {
     const el = ui('interact-hint');
+    const npc = World.nearNPC ? World.nearNPC() : null;
     const it = World.nearInteract ? World.nearInteract() : null;
     const pt = World.nearPortal ? World.nearPortal() : null;
-    if (it) {
+    if (npc) {
+      el.innerHTML = `<b>E</b> — Talk to ${npc.name} <small style="color:var(--dim)">${npc.role}</small>`;
+      el.classList.remove('hidden');
+    } else if (it) {
       el.innerHTML = `<b>E</b> — ${it.label}`;
       el.classList.remove('hidden');
     } else if (pt) {
