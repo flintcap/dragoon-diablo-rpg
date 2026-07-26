@@ -1,4 +1,4 @@
-/* game.js — overworld engine: zones, town, player, enemies, elites, camera, loot, minimap, portals, NPCs */
+/* game.js — overworld engine: 5 zones, town, coast, river, enemies, elites, camera, loot, minimap, portals, NPCs */
 const World = (() => {
   let renderer, scene, camera, player3d, clock;
   let enemies = [], lootDrops = [], props = [], particles = null, portals = [], interactables = [], npcs = [], houses = []; let grottoBossSpawnedFlag = false;
@@ -43,6 +43,21 @@ const World = (() => {
       sky: true, trees: 24, treePalette: 0x12261a, rocks: 10, crystals: 0,
       ruins: false, fireflies: [0xffdd88, 120],
       enemies: [], enemyCount: 0, levelMod: 0, town: true,
+    },
+    coast: {
+      name: 'Emberstrand Coast',
+      bg: 0x0a1016, fog: [0x0c141c, 0.011], ground: 0x4a3f2c,
+      ambient: [0x2a3648, 0.65], hemi: [0x3a4a6e, 0x100e08, 0.35],
+      moon: [0xa8c4ff, 0.95], rim: [0xffc46a, 0.4],
+      sky: true, trees: 0, treePalette: 0, rocks: 20, crystals: 0,
+      ruins: false, fireflies: [0xbfe8ff, 140],
+      enemies: [
+        { name:'Sand Snapper',  kind:'wolf', color:0x8a7a4a, hp:60,  dmg:13, xp:55,  gold:20, scale:.95, speed:2.6 },
+        { name:'Tide Wraith',   kind:'wraith', color:0x2a6a8a, hp:55,  dmg:18, xp:75,  gold:30, scale:.95, speed:2.8 },
+        { name:'Coral Golem',   kind:'golem', color:0x9e5a5a, hp:110, dmg:16, xp:100, gold:38, scale:1.25, speed:1.3 },
+        { name:'Pirate Husk',   kind:'humanoid', color:0x3a4a3a, hp:90, dmg:20, xp:95, gold:44, scale:1.1, speed:1.9 },
+      ],
+      enemyCount: 12, levelMod: 2,
     },
     grotto: {
       name: 'The Sunken Grotto',
@@ -105,7 +120,7 @@ const World = (() => {
     scene = new M.Scene();
     scene.background = new M.Color(Z.bg);
     scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1]);
-    enemies = []; lootDrops = []; props = []; portals = []; interactables = []; npcs = []; houses = [];
+    enemies = []; lootDrops = []; props = []; portals = []; interactables = []; npcs = []; houses = []; gulls = [];
 
     const moon = new M.DirectionalLight(Z.moon[0], Z.moon[1]);
     moon.position.set(-30, 50, 20); moon.castShadow = true;
@@ -121,7 +136,9 @@ const World = (() => {
     buildGround(Z);
     if (Z.sky) buildSky();
     if (Z.trees) buildForest(Z);
+    if (zoneId === 'coast') buildCoast(Z);
     if (zoneId === 'town') buildTown(Z);
+    if (zoneId === 'forest') buildRiver();
     if (zoneId === 'grotto') buildGrotto(Z);
     if (zoneId === 'crater') buildCrater(Z);
     if (Z.ruins) buildRuins();
@@ -141,7 +158,7 @@ const World = (() => {
     const gmat = mat(Z.ground, 1, 0);
     // procedural ground texture
     const gtex = (currentZone === 'forest' || currentZone === 'town') ? 'grass'
-      : currentZone === 'grotto' ? 'stoneBrick' : 'ash';
+      : currentZone === 'coast' ? 'sand' : currentZone === 'grotto' ? 'stoneBrick' : 'ash';
     if (typeof TexFactory !== 'undefined') TexFactory.apply(gmat, gtex, 24, 24);
     const ground = new M.Mesh(geo, gmat);
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
@@ -152,8 +169,8 @@ const World = (() => {
       patch.rotation.x = -Math.PI/2; patch.position.set(p.x, 0.01 + Math.random()*0.02, p.z);
       patch.receiveShadow = true; scene.add(patch);
     }
-    if (currentZone === 'town') {
-      // town ground detail handled by dirt paths in buildTown
+    if (currentZone === 'town' || currentZone === 'coast') {
+      // town/coast ground detail handled by their own builders
     } else if (currentZone === 'forest') {
       for (let d=8; d<WORLD_R; d+=2.4){
         const a = Math.PI/4;
@@ -408,6 +425,120 @@ const World = (() => {
     return null;
   }
 
+  // ---------- COAST ----------
+  function buildPalm(x, z, s=1) {
+    const g = new M.Group();
+    const trunk = new M.Mesh(new M.CylinderGeometry(.12*s, .2*s, 4.2*s, 6), texMat('wood', 1, 2));
+    trunk.position.y = 2*s; trunk.rotation.z = .18; trunk.castShadow = true; g.add(trunk);
+    for (let i=0;i<6;i++){
+      const a = i/6*Math.PI*2;
+      const frond = new M.Mesh(new M.PlaneGeometry(2.2*s, .5*s),
+        new M.MeshStandardMaterial({ color: 0x1d4a24, roughness:.9, side:M.DoubleSide }));
+      frond.position.set(Math.cos(a)*.8*s + .7*s, 4.3*s, Math.sin(a)*.8*s);
+      frond.rotation.y = -a; frond.rotation.z = -.5;
+      g.add(frond);
+    }
+    g.position.set(x, 0, z); scene.add(g);
+    props.push({ x, z, r: .5 });
+  }
+  function buildCoast(Z) {
+    // the sea: a vast water expanse east of the strand
+    const sea = new M.Mesh(new M.CircleGeometry(80, 48), texMat('water', 12, 12, { rough:.12, metal:.5 }));
+    sea.rotation.x = -Math.PI/2; sea.position.set(110, .02, 0); scene.add(sea);
+    const seaGlow = new M.PointLight(0x2a6a9e, 1.2, 60); seaGlow.position.set(50, 3, 0); scene.add(seaGlow);
+    // surf line: foam edge where water meets sand
+    for (let i=0;i<12;i++){
+      const foam = new M.Mesh(new M.CircleGeometry(rnd(.4,.9), 10),
+        new M.MeshBasicMaterial({ color: 0xbfe8ff, transparent:true, opacity:.4 }));
+      foam.rotation.x = -Math.PI/2;
+      foam.position.set(38 + rnd(-1.5,1.5), .06, -30 + i*5.5 + rnd(-1,1));
+      scene.add(foam);
+    }
+    // pier into the water
+    for (let i=0;i<7;i++){
+      const plank = new M.Mesh(new M.BoxGeometry(1.8, .14, 1.1), texMat('wood', 1.5, 1));
+      plank.position.set(36 + i*1.9, .55, -6); plank.castShadow = true; scene.add(plank);
+      for (const side of [-1,1]) {
+        const post = new M.Mesh(new M.CylinderGeometry(.07,.09,.9,5), texMat('wood', 1, 1));
+        post.position.set(36 + i*1.9, .15, -6 + side*.8); scene.add(post);
+      }
+    }
+    // palms scattered on the strand
+    for (let i=0;i<10;i++){
+      const p = randInCircle(WORLD_R);
+      if (p.x > 26 || Math.hypot(p.x,p.z) < 10) continue;
+      buildPalm(p.x, p.z, rnd(.8, 1.3));
+    }
+    // mountains silhouetting the west horizon
+    for (const [mx, mh] of [[-70, 26],[-52, 18],[-38, 22]]){
+      const mtn = new M.Mesh(new M.ConeGeometry(22, mh, 6),
+        new M.MeshStandardMaterial({ color: 0x141c2a, roughness: 1 }));
+      mtn.position.set(mx, mh/2 - 2, -55); scene.add(mtn);
+      const cap = new M.Mesh(new M.ConeGeometry(7, mh*.35, 6),
+        new M.MeshStandardMaterial({ color: 0x3a4a5c, roughness: .9 }));
+      cap.position.set(mx, mh - mh*.18 - 2, -55); scene.add(cap);
+    }
+    // shells + driftwood
+    for (let i=0;i<20;i++){
+      const p = randInCircle(WORLD_R-5);
+      if (p.x > 30) continue;
+      const sh = new M.Mesh(new M.ConeGeometry(rnd(.08,.16), rnd(.1,.2), 5),
+        mat([0xd8cfc0, 0xc8b8a8, 0xe8e0d0][rndi(0,2)], .6));
+      sh.position.set(p.x, .08, p.z); scene.add(sh);
+    }
+    for (let i=0;i<6;i++){
+      const p = randInCircle(WORLD_R-8);
+      const dw = new M.Mesh(new M.CylinderGeometry(rnd(.1,.18), rnd(.12,.2), rnd(1.5,3), 6), texMat('wood', 2, 1));
+      dw.position.set(p.x, .2, p.z); dw.rotation.z = Math.PI/2; dw.rotation.y = rnd(0,3);
+      dw.castShadow = true; scene.add(dw);
+      props.push({ x:p.x, z:p.z, r:1 });
+    }
+    // gulls circling high
+    for (let i=0;i<8;i++){
+      const bird = new M.Mesh(new M.PlaneGeometry(.5,.16),
+        new M.MeshBasicMaterial({ color: 0xdfe8f0, side:M.DoubleSide }));
+      bird.position.set(rnd(-20,30), rnd(12,20), rnd(-20,20));
+      bird.userData = { a: rnd(0,6), r: rnd(8,18), y: bird.position.y, cx: rnd(-10,20), cz: rnd(-10,10), spd: rnd(.3,.7) };
+      scene.add(bird);
+      gulls.push(bird);
+    }
+  }
+  let gulls = [];
+  function updateGulls(dt) {
+    for (const b of gulls) {
+      const u = b.userData;
+      u.a += dt * u.spd;
+      b.position.set(u.cx + Math.cos(u.a)*u.r, u.y + Math.sin(u.a*2)*.8, u.cz + Math.sin(u.a)*u.r);
+      b.rotation.y = -u.a;
+    }
+  }
+
+  // ---------- FOREST RIVER ----------
+  function buildRiver() {
+    // a cold river cutting across the wood, crossed by a plank bridge on the stone path
+    const rmat = texMat('water', 8, 2, { rough:.15, metal:.5 });
+    const river = new M.Mesh(new M.PlaneGeometry(6, 130), rmat);
+    river.rotation.x = -Math.PI/2; river.rotation.z = Math.PI/4 + .95;
+    river.position.set(6, .04, -2); scene.add(river);
+    const rl = new M.PointLight(0x2a5a7e, .7, 30); rl.position.set(6, 2, -2); scene.add(rl);
+    // collision circles along the river center line
+    const dirA = Math.PI/4 + .95;
+    for (let i=-9;i<=9;i++){
+      const d = i*6.5;
+      const cx = 6 + Math.cos(dirA)*d, cz = -2 + Math.sin(dirA)*d;
+      if (Math.hypot(cx-13, cz-11) < 5) continue; // bridge gap
+      props.push({ x:cx, z:cz, r:2.6 });
+    }
+    // the bridge on the stone path
+    const bridge = new M.Mesh(new M.BoxGeometry(7, .2, 3.4), texMat('wood', 4, 2));
+    bridge.position.set(13, .3, 11); bridge.rotation.y = dirA; bridge.castShadow = true; scene.add(bridge);
+    for (const side of [-1,1]) {
+      const rail = new M.Mesh(new M.BoxGeometry(7, .5, .12), texMat('wood', 4, 1));
+      rail.position.set(13 - Math.sin(dirA)*side*1.6, .8, 11 - Math.cos(dirA)*side*1.6);
+      rail.rotation.y = dirA; scene.add(rail);
+    }
+  }
+
   function buildSky() {
     const starGeo = new M.BufferGeometry(); const pts = [];
     for (let i=0;i<800;i++){
@@ -580,12 +711,14 @@ const World = (() => {
   const PORTAL_DEFS = {
     forest: [ { x:-45, z:-45, col:0x8a6aff, to:'grotto', label:'Sunken Grotto',
                 lockCheck: () => !(RPG.player.flags && RPG.player.flags.heraldDead) },
-              { x:27, z:27, col:0xffdd88, to:'town', label:'Mirewood Hollow', lockCheck: null } ],
+              { x:27, z:27, col:0xffdd88, to:'town', label:'Mirewood Hollow', lockCheck: null },
+              { x:45, z:-18, col:0x66ccff, to:'coast', label:'Emberstrand Coast', lockCheck: null } ],
     grotto: [ { x: 30, z: 30, col:0x3ad5c8, to:'forest', label:'Whisperwood', lockCheck: null },
               { x:-42, z:-42, col:0xff5533, to:'crater', label:'Star Crater',
                 lockCheck: () => !(RPG.player.flags && RPG.player.flags.starKey) } ],
     crater: [ { x: 30, z: 30, col:0x8a6aff, to:'grotto', label:'Sunken Grotto', lockCheck: null } ],
     town: [ { x:-27, z:-27, col:0x8a6aff, to:'forest', label:'Whisperwood', lockCheck: null } ],
+    coast: [ { x:-34, z:6, col:0x8a6aff, to:'forest', label:'Whisperwood', lockCheck: null } ],
   };
   function buildOnePortal(cfg) {
     const g = new M.Group();
@@ -1095,6 +1228,7 @@ const World = (() => {
     particles.material.opacity = .6 + Math.sin(animT*2.3)*.25;
     updateLeaves(dt);
     updateNPCs(dt);
+    updateGulls(dt);
 
     // herald spawns when the quest is active and the player nears the shrine
     if (RPG.player && !bossSpawned && currentZone === 'forest'
