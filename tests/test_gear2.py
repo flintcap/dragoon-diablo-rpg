@@ -18,6 +18,11 @@ async def main():
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2500)
 
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
+
         # 1. equip a full rare/unique kit programmatically, refresh visuals
         checks = await page.evaluate("""() => {
           const p = RPG.player;

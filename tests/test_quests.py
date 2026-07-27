@@ -82,6 +82,11 @@ async def main():
         await page.click('#btn-intro-begin')
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2500)
+
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
         await page.keyboard.press('j'); await page.wait_for_timeout(700)
         await page.screenshot(path=f'{OUT}/51_questlog.png')
         await page.keyboard.press('j'); await page.wait_for_timeout(500)

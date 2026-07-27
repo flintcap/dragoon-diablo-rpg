@@ -344,6 +344,122 @@ const Main = (() => {
     if (force || sig !== objSig) { objSig = sig; World.syncQuestObjects(list); }
   }
 
+  // ============================================================
+  //  THE JOURNEY — waystone network, zone order, "where do I go now"
+  // ============================================================
+  /* The intended path through the world, in order. Every zone is reached either by
+     walking the portal at the end of the previous one, or — once you have stood at its
+     waystone — by the network, from any other stone. */
+  const ZONE_GUIDE = [
+    { id:'town', name:'Mirewood Hollow', icon:'🏘', lvl:'—',
+      role:'Safe haven. Shops, the bounty board, Elder Maera, and the hub waystone.',
+      open:()=>true },
+    { id:'forest', name:'Whisperwood', icon:'🌲', lvl:'1–6',
+      role:'Where Act I begins: the ruined shrine, the trial crystals, Melbu\'s Herald.',
+      open:()=>true, via:'The west road out of Mirewood Hollow, past the waystone.' },
+    { id:'coast', name:'Emberstrand Coast', icon:'🌊', lvl:'4–9',
+      role:'A side road off the Whisperwood. Kael the Lancer is found out here.',
+      open:()=>true, via:'East portal in the Whisperwood.' },
+    { id:'grotto', name:'The Sunken Grotto', icon:'💎', lvl:'7–12',
+      role:'Beneath the shrine. The Drowned Relics, and the Tyrant that guards them.',
+      open:()=>F('heraldDead'), why:'Destroy Melbu\'s Herald at the Whisperwood shrine.',
+      via:'Southwest portal in the Whisperwood.' },
+    { id:'dungeon', name:'The Hollow Deep', icon:'⛓', lvl:'9–14',
+      role:'Prison levels below the Grotto. The Warden of Chains — and Lyra\'s cell.',
+      open:()=>F('enteredGrotto'), why:'Reach the Sunken Grotto first.',
+      via:'Northeast portal in the Sunken Grotto.' },
+    { id:'crater', name:'The Star Crater', icon:'☄', lvl:'12–16',
+      role:'Where the Star fell. Act I ends here, against MELBU FRAHMA.',
+      open:()=>F('starKey'), why:'Forge the Star Key — Herald, Tyrant, and the Meteor Shard.',
+      via:'Southwest portal in the Sunken Grotto.' },
+    { id:'peaks', name:'Stormpeak Ascent', icon:'⛈', lvl:'16+',
+      role:'The endgame climb. Three Storm Sigils, then the Stormcaller at the summit.',
+      open:()=>F('melbuDead'), why:'Destroy Melbu Frahma in the Star Crater.',
+      via:'Northeast portal in the Whisperwood.' },
+  ];
+  const zoneInfo = id => ZONE_GUIDE.find(z => z.id === id);
+
+  /* Where the current objective actually is. Drives the tracker's NEXT line and the
+     gold chevron on the minimap — this is the game telling you where to walk. */
+  function questGoal() {
+    if (!RPG.player) return null;
+    const q = currentMain();
+    if (!q) {
+      if (!F('done_s3')) {
+        if (Fget('sigils') < 3) return { zone:'peaks', idPrefix:'sigil', label:'Attune the next Storm Sigil' };
+        if (!F('stormcallerDead')) return { zone:'peaks', x:0, z:-34, label:'The Stormcaller at the summit shrine' };
+      }
+      return { zone:'town', label:'Mirewood Hollow — take a bounty' };
+    }
+    if (q.id === 'q1') return RPG.player.kills < 3
+      ? { zone:'forest', label:'Hunt 3 fiends in the Whisperwood' }
+      : { zone:'forest', id:'shard', label:'Claim the Spirit Shard at the shrine' };
+    if (q.id === 'q2') {
+      const names = { c_star:'Star', c_moon:'Moon', c_ember:'Ember' };
+      const next = ATTUNE_ORDER[Fget('attuned')] || ATTUNE_ORDER[0];
+      return { zone:'forest', id: next, label:`Attune the ${names[next]} Crystal` };
+    }
+    if (q.id === 'q3') {
+      if (Fget('anchorsDestroyed') < 3)
+        return { zone:'forest', idPrefix:'anchor', label:'Destroy a Shadow Anchor at the shrine' };
+      return { zone:'forest', x:0, z:-10, label:"Melbu's Herald at the shrine" };
+    }
+    if (q.id === 'q4') {
+      if (!F('enteredGrotto')) return { zone:'grotto', label:'Descend into the Sunken Grotto' };
+      return { zone:'grotto', idPrefix:'relic', label:'Recover a Drowned Relic' };
+    }
+    if (q.id === 'q5') return { zone:'grotto', x:0, z:-30, label:'The Tyrant of the Deep' };
+    if (q.id === 'q6') return F('starKey')
+      ? { zone:'crater', x:0, z:-6, label:'MELBU FRAHMA in the Star Crater' }
+      : { zone:'forest', id:'meteor', label:'Recover the Meteor Shard' };
+    return null;
+  }
+  /* The one-line "go here next" the tracker prints under the objectives. */
+  function nextLine() {
+    const g = questGoal(); if (!g) return '';
+    const here = World.zone === g.zone;
+    const z = zoneInfo(g.zone);
+    if (here) return `<div class="q-next">▸ ${g.label}</div>`;
+    const zn = z ? z.name : g.zone;
+    const reachable = z && z.open();
+    const how = World.waystoneAttuned && World.waystoneAttuned(g.zone) ? 'waystone or ' : '';
+    return `<div class="q-next">▸ Travel to <b>${zn}</b> — ${g.label}` +
+      (reachable ? `<small>${how ? how.replace(/ or $/, ' or, on foot: ') : ''}${z && z.via ? z.via : 'follow the portals'}</small>`
+                 : `<small>🔒 ${z ? z.why : 'sealed'}</small>`) + '</div>';
+  }
+
+  /* The waystone panel: the whole world, its gates, and what still bars each one. */
+  function renderWaystone() {
+    const wrap = ui('waystone-list'); if (!wrap) return;
+    const here = World.zone;
+    ui('waystone-here').textContent = (zoneInfo(here) || {}).name || here;
+    wrap.innerHTML = ZONE_GUIDE.map(z => {
+      const attuned = World.waystoneAttuned(z.id);
+      const open = z.open();
+      const current = z.id === here;
+      const state = current ? 'current' : !open ? 'sealed' : !attuned ? 'undiscovered' : 'ready';
+      const note = current ? 'You are here'
+        : !open ? `🔒 ${z.why}`
+        : !attuned ? `Waystone not yet attuned — reach it on foot once. ${z.via || ''}`
+        : 'Attuned — travel now';
+      return `<div class="way-row ${state}" data-zone="${z.id}">
+        <span class="way-icon">${z.icon}</span>
+        <span class="way-body"><b>${z.name}</b><small>${z.role}</small><em>${note}</em></span>
+        <span class="way-lvl">Lv ${z.lvl}</span>
+        <button class="way-go" data-zone="${z.id}" ${state === 'ready' ? '' : 'disabled'}>${state === 'ready' ? 'TRAVEL' : state === 'current' ? '—' : '🔒'}</button>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('.way-go').forEach(b => {
+      b.onclick = () => {
+        if (b.disabled) return;
+        AudioSys.play('click');
+        toggleModal('waystone', false);
+        World.waystoneTravel(b.dataset.zone);
+      };
+    });
+  }
+  function openWaystone() { toggleModal('waystone', true); }
+
   // ---- tracker + log rendering ----
   function refreshQuest() {
     const el = ui('quest-text'); if (!el || !RPG.player) return;
@@ -358,6 +474,7 @@ const Main = (() => {
         html += `<div class="${done?'q-done':''}">${done?'✓':'·'} ${o.text} <span class="q-prog">${a}/${b}</span></div>`;
       }
     } else html = '<span class="q-done">✓ Act I complete</span>';
+    html += nextLine();
     for (const s of SIDE_QUESTS) {
       if (F('done_'+s.id)) continue;
       const [a,b] = s.prog();
@@ -872,6 +989,7 @@ const Main = (() => {
   }
 
   // ---------- MODALS ----------
+  const MODAL_IDS = ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop','bounty','waystone'];
   function toggleModal(id, show) {
     const m = ui(id);
     const showing = !m.classList.contains('hidden');
@@ -881,6 +999,7 @@ const Main = (() => {
       if (id === 'skill-tree') renderSkillTree();
       if (id === 'inventory') { renderEquipment(); renderInventory(); }
       if (id === 'quest-log') renderQuestLog();
+      if (id === 'waystone') renderWaystone();
       m.classList.remove('hidden');
     } else m.classList.add('hidden');
   }
@@ -894,11 +1013,14 @@ const Main = (() => {
     p.hp = Math.round(p.maxHp*.5); p.mp = Math.round(p.maxMp*.5);
     const lost = Math.round(p.gold*.1); p.gold -= lost;
     ui('results-title').textContent = 'DEFEAT'; ui('results-title').classList.add('defeat');
-    ui('results-body').innerHTML = `<div>You awaken at the forest's edge, wounded.<br>Lost ${lost} gold.</div>`;
+    ui('results-body').innerHTML =
+      `<div>You wake on a cot in <b>Mirewood Hollow</b>. Someone dragged you back through the waystone.<br>Lost ${lost} gold.</div>`;
     ui('results-screen').classList.remove('hidden');
     ui('btn-results-ok').onclick = () => {
       ui('results-screen').classList.add('hidden');
-      World.player3d.group.position.set(24, 0, 24);
+      // death always returns you to the hub — the network is the game's safety net
+      if (World.zone !== 'town') World.travelTo('town', true);
+      else World.player3d.group.position.set(-10, 0, -6.6);
       UI.refreshHUD(); toWorld();
     };
   }
@@ -962,12 +1084,15 @@ const Main = (() => {
     };
     ui('intro-screen').classList.add('hidden');
     ui('hud').classList.remove('hidden');
+    // the hub stone is attuned before you take your first step — town is always home
+    (RPG.player.flags ||= {}).waystones = { town: true };
     UI.refreshHUD(); refreshQuest(); resyncObjects(true);
     if (World.refreshPlayerGear) World.refreshPlayerGear();
-    showZoneTitle('forest');
+    showZoneTitle('town');
     toast(`<b>Act I — The Fallen Star</b>`);
-    setTimeout(()=> toast('<i>Serah: "Fiends first, questions after. Move!"</i>'), 2500);
-    setTimeout(()=> toast('Press <b>J</b> for your quest log'), 6000);
+    setTimeout(()=> toast('<i>Serah: "Mirewood Hollow. You bled out on their road and they carried you in. Stock up — then we go."</i>'), 2200);
+    setTimeout(()=> toast('✦ The <b>Waystone</b> stands on the west road. Every zone has one — touch it and you can travel back here from anywhere.<br><small>E at a waystone · M to open the network</small>', 'var(--gold)'), 5600);
+    setTimeout(()=> toast('▸ Take the <b>west road</b> out of the square — past the waystone, to the arch. That is the <b>Whisperwood</b>.<br><small>The gold arrow on your minimap always points at your objective.</small>'), 9500);
     state = 'world';
   };
 
@@ -991,14 +1116,15 @@ const Main = (() => {
     if (e.code === 'KeyJ') toggleModal('quest-log');
     if (e.code === 'KeyQ') hotbarUse({ potion:'hp' });
     if (e.code === 'KeyR') hotbarUse({ potion:'mp' });
+    if (e.code === 'KeyM') { if (World.nearWaystone()) openWaystone(); else toast('You must be standing at a waystone.'); }
     if (e.code === 'KeyE') {
       const npc = World.nearNPC && World.nearNPC();
       if (npc) openDialogue(npc);
-      else if (!World.tryInteract()) World.tryPortal();
+      else if (!World.useWaystone() && !World.tryInteract()) World.tryPortal();
     }
     if (e.code === 'Escape') {
-      const anyOpen = ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop','bounty'].some(id => !ui(id).classList.contains('hidden'));
-      if (anyOpen) ['char-sheet','skill-tree','inventory','quest-log','dialogue','shop','bounty'].forEach(id => toggleModal(id, false));
+      const anyOpen = MODAL_IDS.some(id => !ui(id).classList.contains('hidden'));
+      if (anyOpen) MODAL_IDS.forEach(id => toggleModal(id, false));
       else {
         const p = ui('pause-menu');
         const show = p.classList.contains('hidden');
@@ -1027,9 +1153,15 @@ const Main = (() => {
   function updateInteractHint() {
     const el = ui('interact-hint');
     const npc = World.nearNPC ? World.nearNPC() : null;
+    const ws = World.nearWaystone ? World.nearWaystone() : null;
     const it = World.nearInteract ? World.nearInteract() : null;
     const pt = World.nearPortal ? World.nearPortal() : null;
-    if (npc) {
+    if (ws && !npc) {
+      el.innerHTML = World.waystoneAttuned(ws.zone)
+        ? '<b>E</b> — Open the <b>Waystone Network</b> <small style="color:var(--dim)">travel to any attuned zone</small>'
+        : '<b>E</b> — <b style="color:var(--gold-hi)">Attune this Waystone</b> <small style="color:var(--dim)">adds it to your travel network</small>';
+      el.classList.remove('hidden');
+    } else if (npc) {
       el.innerHTML = `<b>E</b> — Talk to ${npc.name} <small style="color:var(--dim)">${npc.role}</small>`;
       el.classList.remove('hidden');
     } else if (it) {
@@ -1044,6 +1176,6 @@ const Main = (() => {
   }
   requestAnimationFrame(loop);
 
-  return { toWorld, onDefeat, onZoneChanged, getQuestStage,
+  return { toWorld, onDefeat, onZoneChanged, getQuestStage, openWaystone, questGoal, ZONE_GUIDE,
     get state(){ return state; } };
 })();

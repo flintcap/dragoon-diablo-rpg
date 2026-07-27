@@ -74,6 +74,11 @@ async def main():
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2000)
 
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
+
         # 1. peaks portal must be LOCKED before Melbu dies
         await page.evaluate("() => { localStorage.removeItem('dd_save'); }")
         await tp(page, -21, 45)

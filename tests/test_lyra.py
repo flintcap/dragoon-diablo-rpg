@@ -76,6 +76,11 @@ async def main():
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2000)
 
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
+
         # 0. rescue must NOT be available while the Warden lives
         await page.evaluate("""() => { const f = RPG.player.flags = RPG.player.flags || {};
           f.heraldDead = true; f.kaelJoined = true; f.starKey = true; }""")

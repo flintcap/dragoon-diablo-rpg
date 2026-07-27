@@ -28,6 +28,9 @@ async def start_game(page, cls='knight'):
     await page.wait_for_timeout(700)
     await page.click('#btn-intro-begin'); await page.wait_for_timeout(2200)
     await page.evaluate("() => { window.__autoPerfect = true; }")
+    # the game opens in Mirewood Hollow; the combat tests need a zone with roamers in it
+    await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+    await page.wait_for_timeout(1800)
 
 
 async def force_battle(page):
@@ -287,6 +290,70 @@ async def main():
         }""")
         print('save/load — %d uses, selected %s, mastery Lv %d' % (rt['uses'], rt['sel'], rt['lv']))
         print('PASS mastery survives save/load:', rt['uses'] == 12 and rt['sel'] == 'crush_dance' and rt['lv'] == 2)
+
+        # ---------------------------------------------------------------- 9. the waystone network
+        # the hub is attuned from the first step; the Whisperwood stone is not
+        state = await page.evaluate("""() => ({
+            zone: World.zone,
+            town: World.waystoneAttuned('town'),
+            forest: World.waystoneAttuned('forest'),
+            zones: Main.ZONE_GUIDE.map(z => z.id),
+        })""")
+        print('waystones — in %s · town attuned %s · forest attuned %s · %d zones charted' %
+              (state['zone'], state['town'], state['forest'], len(state['zones'])))
+        print('PASS hub starts attuned, other stones do not:',
+              state['town'] and not state['forest'] and len(state['zones']) == 7)
+
+        # walk onto the Whisperwood stone and attune it
+        att = await page.evaluate("""() => {
+            const w = World.WAYSTONES.forest;
+            World.player3d.group.position.set(w.x, 0, w.z + 3);
+            return !!World.nearWaystone();
+        }""")
+        await page.wait_for_timeout(700)
+        hint = await page.evaluate("() => document.getElementById('interact-hint').innerText")
+        await page.keyboard.press('e'); await page.wait_for_timeout(900)
+        now = await page.evaluate("() => World.waystoneAttuned('forest')")
+        print('stone in range: %s · hint %r · attuned after E: %s' % (att, hint.strip()[:46], now))
+        print('PASS attuning a stone works on foot:', att and now)
+
+        # the network panel gates every zone honestly
+        await page.keyboard.press('e'); await page.wait_for_timeout(800)
+        panel = await page.evaluate("""() => ({
+            open: !document.getElementById('waystone').classList.contains('hidden'),
+            rows: [...document.querySelectorAll('.way-row')].map(r => ({
+                zone: r.dataset.zone,
+                state: r.className.replace('way-row ', ''),
+                enabled: !r.querySelector('.way-go').disabled })),
+        })""")
+        by = {r['zone']: r for r in panel['rows']}
+        print('network open:', panel['open'])
+        for r in panel['rows']:
+            print('   %-8s %-13s travel=%s' % (r['zone'], r['state'], r['enabled']))
+        print('PASS network gates correctly:',
+              panel['open']
+              and by['forest']['state'] == 'current'
+              and by['town']['state'] == 'ready' and by['town']['enabled']
+              and by['grotto']['state'] == 'sealed' and not by['grotto']['enabled']
+              and by['coast']['state'] == 'undiscovered' and not by['coast']['enabled'])
+        await shot(page, '99_waystone_network')
+
+        # travel back to the hub through the network, then out again
+        await page.click('.way-go[data-zone="town"]'); await page.wait_for_timeout(2600)
+        in_town = await page.evaluate("() => World.zone")
+        on_stone = await page.evaluate("() => !!World.nearWaystone()")
+        await page.keyboard.press('e'); await page.wait_for_timeout(800)
+        await page.click('.way-go[data-zone="forest"]'); await page.wait_for_timeout(2600)
+        back = await page.evaluate("() => World.zone")
+        print('network round trip: forest → %s (on the stone: %s) → %s' % (in_town, on_stone, back))
+        print('PASS network travels both ways and lands you on the stone:',
+              in_town == 'town' and on_stone and back == 'forest')
+
+        # the tracker names where to go next
+        goal = await page.evaluate("() => JSON.stringify(Main.questGoal())")
+        nxt = await page.evaluate("() => (document.querySelector('#quest-text .q-next') || {}).innerText || ''")
+        print('quest goal:', goal, '| tracker NEXT:', repr(nxt.replace('\\n', ' ')[:70]))
+        print('PASS the tracker tells you where to go:', bool(nxt.strip()))
 
         print('ERRORS:', errors if errors else '(none)')
         await browser.close()

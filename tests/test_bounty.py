@@ -22,11 +22,9 @@ async def main():
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2500)
 
-        # 1. travel to town, find the board
-        await tp(page, 26, 26)
-        await page.keyboard.press('e'); await page.wait_for_timeout(2500)
+        # 1. the game now opens in town — the board is a short walk from the square
         zone = await page.evaluate("() => World.zone")
-        print('reached town:', zone == 'town')
+        print('opens in town:', zone == 'town')
         await tp(page, 6, -6)
         hint = await page.evaluate("() => document.getElementById('interact-hint').innerText")
         print('board hint:', hint.strip()[:45])

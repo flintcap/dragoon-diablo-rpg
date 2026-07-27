@@ -63,6 +63,24 @@ removal on unequip, battle-rig carry-over for shield/helm/amulet. Differs from p
 pass where EVERY equipment slot has a live on-character visual; first aura effect. Run
 logged at verifier/runs/2026-07-27-gear-depth.md — all PASS, Act-I regression green.
 
+## v9 — 2026-07-27
+Measures two passes. **Combat depth:** named Additions (4 per class with their own beat
+counts, timing windows, ring speeds and elemental finishers), Addition mastery levelled by
+use rather than skill points, an elemental affinity system multiplying through family × zone
+× boss with WEAK/RESIST feedback, resistance affixes + 3 uniques built around them, and a
+six-ailment engine (burn/poison/bleed/chill/shock/curse) ticking on both the enemy and the
+party. **World flow:** the game now opens in Mirewood Hollow, every zone carries a waystone
+you attune on foot, and the network panel charts all seven zones with their gates and unlock
+quests; the quest tracker names the next destination and the minimap points a gold chevron at
+it. Differs from prior: first pass to add a shared rules module (`app/js/combat.js`) that is
+testable without a scene; first change to the world's topology since the zones were built.
+Caught & fixed: Serah's and Kael's party bars had no CSS fills and had been invisible since
+v3; the party frame overlapped the hero HUD; the world hotbar covered the battle log; and
+`test_quests` was clicking a `data-action` selector the dynamic battle menu never emits, so
+the "full Act-I chain" regression had never actually thrown a punch — verified against the
+pre-change baseline before fixing. Run logged at
+verifier/runs/2026-07-27-combat-and-waystones.md — all PASS, every live regression green.
+
 ## v8 — 2026-07-27
 Measures: Mirewood Bounty Board — physical town quest board, 3 rotating contracts
 (kill-family / elite / salvage-items), accept/track via new per-kind kill counters,

@@ -6,7 +6,7 @@ const World = (() => {
   const CAM_DIST = 12;
   const WORLD_R = 70;
   let animT = 0, onEncounter = null, bossSpawned = false, grottoBossSpawned = false, camSnap = true;
-  let currentZone = 'forest';
+  let currentZone = 'town', waystone = null;
 
   const M = THREE;
   const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -143,14 +143,16 @@ const World = (() => {
     camera = new M.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
     clock = new M.Clock();
     player3d = buildCharacter(0xff8833);
-    buildZone('forest', true);
+    // every run opens in Mirewood Hollow: the hub waystone, the shops, and the road out
+    buildZone('town', true);
     addEventListeners();
   }
 
   // ---------- ZONE CONSTRUCTION ----------
-  function buildZone(zoneId, first=false) {
+  function buildZone(zoneId, first=false, arriveAtWaystone=false) {
     const Z = ZONES[zoneId];
     currentZone = zoneId;
+    waystone = null;
     scene = new M.Scene();
     scene.background = new M.Color(Z.bg);
     scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1]);
@@ -185,8 +187,14 @@ const World = (() => {
     buildLeaves();
     buildParticles(Z);
     buildPortal(zoneId);
+    buildWaystone(zoneId);
     scene.add(player3d.group);
-    player3d.group.position.set(zoneId === 'forest' ? 20 : 24, 0, zoneId === 'forest' ? 20 : 24);
+    // arriving by waystone puts you on its steps; arriving by portal drops you at the
+    // zone's mouth, next to the way back
+    const w = WAYSTONES[zoneId];
+    if (arriveAtWaystone && w) player3d.group.position.set(w.spawn.x, 0, w.spawn.z);
+    else if (zoneId === 'town') player3d.group.position.set(7, 0, 11); // on the square road, facing the well
+    else player3d.group.position.set(zoneId === 'forest' ? 20 : 24, 0, zoneId === 'forest' ? 20 : 24);
     camSnap = true;
     spawnEnemies(Z);
   }
@@ -1000,6 +1008,89 @@ const World = (() => {
     dungeon: [ { x:-30, z:30, col:0x8a6aff, to:'grotto', label:'Sunken Grotto', lockCheck: null } ],
     peaks: [ { x: 30, z: 30, col:0x8a6aff, to:'forest', label:'Whisperwood', lockCheck: null } ],
   };
+  // ---------- WAYSTONE NETWORK ----------
+  // One waystone per zone. You attune it by walking up to it once; from then on it is
+  // a two-way door in the network, so the world stops being a corridor you must re-walk.
+  // Mirewood Hollow's stone is the hub and is attuned from the first step of the game.
+  const WAYSTONES = {
+    // `spawn` puts you on the stone's steps — inside its interaction radius, so the
+    // network is always one keypress away the moment you arrive
+    town:    { x:-10, z:-10, col:0xffd76e, spawn:{ x:-10, z:-6.6 } },
+    forest:  { x: 24, z: 14, col:0x7ec8ff, spawn:{ x: 24, z: 17.4 } },
+    coast:   { x:-26, z: 14, col:0x3ab8d8, spawn:{ x:-26, z: 17.4 } },
+    grotto:  { x: 26, z: 22, col:0x3ad5c8, spawn:{ x: 26, z: 25.4 } },
+    dungeon: { x:-24, z: 24, col:0xd8823a, spawn:{ x:-24, z: 27.4 } },
+    crater:  { x: 24, z: 24, col:0xff6a3a, spawn:{ x: 24, z: 27.4 } },
+    peaks:   { x: 24, z: 24, col:0xbfe8ff, spawn:{ x: 24, z: 27.4 } },
+  };
+  function waystoneFlags() { return ((RPG.player.flags ||= {}).waystones ||= { town: true }); }
+  function waystoneAttuned(zone) { return !!(RPG.player && waystoneFlags()[zone]); }
+  function buildWaystone(zoneId) {
+    const w = WAYSTONES[zoneId]; if (!w) return;
+    const g = new M.Group();
+    // a stepped dais so it reads as built, not grown
+    const dais = new M.Mesh(new M.CylinderGeometry(2.6, 3.0, .3, 8), mat(0x2a3040, .95));
+    dais.position.y = .15; dais.receiveShadow = true; g.add(dais);
+    const step = new M.Mesh(new M.CylinderGeometry(1.9, 2.2, .3, 8), mat(0x333c4e, .95));
+    step.position.y = .42; g.add(step);
+    // the obelisk itself
+    const shaft = new M.Mesh(new M.CylinderGeometry(.45, .62, 4.2, 6), mat(0x3a4356, .85, .15));
+    shaft.position.y = 2.6; shaft.castShadow = true; g.add(shaft);
+    const cap = new M.Mesh(new M.ConeGeometry(.6, .9, 6), mat(0x4a5468, .7, .3));
+    cap.position.y = 5.1; g.add(cap);
+    // the crystal heart — dark until attuned, blazing after
+    const core = new M.Mesh(new M.OctahedronGeometry(.55, 0), mat(w.col, .2, .4, w.col, 1.6));
+    core.position.y = 3.4; g.add(core);
+    const halo = new M.Mesh(new M.TorusGeometry(1.1, .07, 6, 28),
+      new M.MeshBasicMaterial({ color: w.col, transparent:true, opacity:.75 }));
+    halo.rotation.x = Math.PI/2; halo.position.y = 3.4; g.add(halo);
+    const light = new M.PointLight(w.col, 1.5, 16); light.position.y = 3.4; g.add(light);
+    g.position.set(w.x, 0, w.z);
+    scene.add(g);
+    waystone = { zone: zoneId, x: w.x, z: w.z, group: g, core, halo, light, col: w.col };
+    refreshWaystoneGlow();
+  }
+  // Dormant stones are dimmed so an unattuned one reads as something to go and touch.
+  function refreshWaystoneGlow() {
+    if (!waystone) return;
+    const on = waystoneAttuned(waystone.zone);
+    waystone.light.intensity = on ? 1.5 : .35;
+    waystone.halo.material.opacity = on ? .75 : .2;
+    waystone.core.material.emissiveIntensity = on ? 1.6 : .25;
+  }
+  function nearWaystone() {
+    if (!waystone) return null;
+    const p = player3d.group.position;
+    return Math.hypot(p.x - waystone.x, p.z - waystone.z) < 4.5 ? waystone : null;
+  }
+  /* E on a waystone: attune it the first time, open the network every time after. */
+  function useWaystone() {
+    const w = nearWaystone(); if (!w) return false;
+    if (!waystoneAttuned(w.zone)) {
+      waystoneFlags()[w.zone] = true;
+      refreshWaystoneGlow();
+      AudioSys.play('dragoon');
+      toast(`✦ <b>Waystone attuned — ${ZONES[w.zone].name}</b><br><small>You can now travel here from any other stone.</small>`, 'var(--gold)');
+      return true;
+    }
+    Main.openWaystone();
+    return true;
+  }
+  /* The one place a zone change happens, whatever triggered it. */
+  function travelTo(zoneId, arriveAtWaystone = false) {
+    AudioSys.play('dragoon');
+    buildZone(zoneId, false, arriveAtWaystone);
+    toast(`— ${ZONES[zoneId].name} —`);
+    if (zoneId === 'crater') setTimeout(spawnCraterBoss, 2500);
+    if (zoneId === 'dungeon') setTimeout(spawnWarden, 2500);
+    Main.onZoneChanged(zoneId);
+  }
+  function waystoneTravel(zoneId) {
+    if (!waystoneAttuned(zoneId) || zoneId === currentZone) return false;
+    travelTo(zoneId, true);
+    return true;
+  }
+
   function buildOnePortal(cfg) {
     const g = new M.Group();
     // stone arch
@@ -1462,12 +1553,7 @@ const World = (() => {
     for (const pt of portals) {
       if (Math.hypot(p.x-pt.x, p.z-pt.z) < 3.2) {
         if (portalLocked(pt)) { toast('🔒 Sealed. The way is barred by a power you have not yet broken.'); return; }
-        AudioSys.play('dragoon');
-        buildZone(pt.to);
-        toast(`— ${ZONES[pt.to].name} —`);
-        if (pt.to === 'crater') setTimeout(spawnCraterBoss, 2500);
-        if (pt.to === 'dungeon') setTimeout(spawnWarden, 2500);
-        Main.onZoneChanged(pt.to);
+        travelTo(pt.to);
         return;
       }
     }
@@ -1640,6 +1726,14 @@ const World = (() => {
       pt.mem.rotation.z += dt*1.5;
       pt.mem.material.opacity = (portalLocked(pt) ? .25 : .65) + Math.sin(animT*3)*.15;
     }
+    // the waystone turns its halo and breathes; a dormant one pulses harder to draw you over
+    if (waystone) {
+      const on = waystoneAttuned(waystone.zone);
+      waystone.halo.rotation.z += dt * (on ? 1.1 : .4);
+      waystone.core.rotation.y += dt * 1.4;
+      waystone.core.position.y = 3.4 + Math.sin(animT*1.6)*.16;
+      waystone.light.intensity = on ? 1.5 + Math.sin(animT*2.4)*.35 : .35 + Math.sin(animT*3.2)*.3;
+    }
 
     // ambient anims
     if (scene.userData.spiritStone) {
@@ -1757,16 +1851,67 @@ const World = (() => {
     }
     ctx.fillStyle = '#ffe14d';
     for (const l of lootDrops) { ctx.fillRect(R + l.group.position.x*s - 1.5, R + l.group.position.z*s - 1.5, 3, 3); }
+    // quest interactables — the things the tracker is actually telling you to go and touch
+    for (const it of interactables) {
+      ctx.fillStyle = '#f5d76e';
+      ctx.beginPath(); ctx.arc(R + it.x*s, R + it.z*s, 3, 0, 7); ctx.fill();
+    }
+    // the waystone: a diamond, hollow while dormant
+    if (waystone) {
+      const wx = R + waystone.x*s, wz = R + waystone.z*s;
+      ctx.beginPath();
+      ctx.moveTo(wx, wz-5); ctx.lineTo(wx+4.5, wz); ctx.lineTo(wx, wz+5); ctx.lineTo(wx-4.5, wz); ctx.closePath();
+      if (waystoneAttuned(waystone.zone)) { ctx.fillStyle = '#ffd76e'; ctx.fill(); }
+      else { ctx.strokeStyle = '#ffd76e'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
     const p = player3d.group.position;
     ctx.fillStyle = '#7ec8ff'; ctx.beginPath(); ctx.arc(R + p.x*s, R + p.z*s, 3.5, 0, 7); ctx.fill();
     ctx.strokeStyle = '#7ec8ff55'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(R + p.x*s, R + p.z*s, 8, 0, 7); ctx.stroke();
+    drawObjectiveArrow(ctx, R, s, p);
+  }
+  /* A gold chevron riding the minimap rim, pointing at wherever the quest wants you.
+     Direction is the thing the game was missing most — this is it, on screen, always. */
+  function objectivePoint() {
+    const goal = Main.questGoal ? Main.questGoal() : null;
+    if (!goal) return null;
+    if (goal.zone && goal.zone !== currentZone) {
+      // wrong zone — point at the way out toward it, then at the waystone as a fallback
+      const pt = portals.find(x => x.to === goal.zone) || portals[0];
+      if (pt) return { x: pt.x, z: pt.z, label: pt.label };
+      return waystone ? { x: waystone.x, z: waystone.z, label: 'Waystone' } : null;
+    }
+    // objectives that are "any one of these" (anchors, relics, sigils) point at the
+    // nearest one still standing
+    const pool = goal.idPrefix ? interactables.filter(x => x.id.startsWith(goal.idPrefix))
+               : goal.id ? interactables.filter(x => x.id === goal.id) : [];
+    if (pool.length) {
+      const p = player3d.group.position;
+      const it = pool.reduce((a, b) =>
+        Math.hypot(a.x-p.x, a.z-p.z) <= Math.hypot(b.x-p.x, b.z-p.z) ? a : b);
+      return { x: it.x, z: it.z, label: goal.label };
+    }
+    if (goal.x !== undefined) return { x: goal.x, z: goal.z, label: goal.label };
+    return null;
+  }
+  function drawObjectiveArrow(ctx, R, s, p) {
+    let g; try { g = objectivePoint(); } catch (e) { g = null; }
+    if (!g) return;
+    const dx = g.x - p.x, dz = g.z - p.z;
+    if (Math.hypot(dx, dz) < 4) return; // standing on it
+    const a = Math.atan2(dz, dx);
+    const rr = R - 9;
+    const cx = R + Math.cos(a)*rr, cz = R + Math.sin(a)*rr;
+    ctx.save(); ctx.translate(cx, cz); ctx.rotate(a);
+    ctx.fillStyle = '#f5d76e';
+    ctx.beginPath(); ctx.moveTo(6,0); ctx.lineTo(-4,-4.5); ctx.lineTo(-2,0); ctx.lineTo(-4,4.5); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 
   function setPlayerClass(clsKey) {
     scene.remove(player3d.group);
     player3d = buildCharacter(RPG.CLASSES[clsKey].color);
-    player3d.group.position.set(20, 0, 20);
+    player3d.group.position.set(7, 0, 11); // the Mirewood square road, facing the well
     scene.add(player3d.group);
     document.getElementById('portrait-face').style.background =
       getComputedStyle(document.querySelector(`.class-portrait.${RPG.CLASSES[clsKey].portrait}`)).background;
@@ -1774,6 +1919,7 @@ const World = (() => {
 
   return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
     syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture, nearNPC, refreshPlayerGear, buildWeaponMesh, currentWeaponType, buildShieldMesh, buildHelmMesh,
+    WAYSTONES, nearWaystone, useWaystone, waystoneAttuned, waystoneTravel, travelTo, ZONES,
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },
     get player3d(){ return player3d; }, get enemies(){ return enemies; },
     get zone(){ return currentZone; },

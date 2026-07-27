@@ -15,6 +15,11 @@ async def main():
         await page.click('.class-card[data-class="knight"]'); await page.click('#btn-start')
         await page.wait_for_timeout(400); await page.click('#btn-intro-begin'); await page.wait_for_timeout(2000)
 
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
+
         # river screenshot
         await page.evaluate("() => { World.player3d.group.position.set(13, 0, 14); }")
         await page.wait_for_timeout(2000)

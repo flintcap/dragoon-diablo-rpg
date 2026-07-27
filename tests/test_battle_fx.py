@@ -27,6 +27,11 @@ async def main():
         await page.evaluate("() => { window.__autoPerfect = true; }")
         await page.wait_for_timeout(2500)
 
+        # the game now opens in Mirewood Hollow — take the road out to the Whisperwood
+        await page.evaluate("() => { if (World.zone !== 'forest') World.travelTo('forest'); }")
+        await page.wait_for_timeout(1800)
+
+
         # jump on a wolf (kind-specific death anim + growl attack sound)
         found = await page.evaluate("""() => {
           const e = World.enemies.find(e => e.kind === 'wolf') || World.enemies[0];
