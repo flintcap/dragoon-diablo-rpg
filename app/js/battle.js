@@ -3,7 +3,9 @@ const Battle = (() => {
   const M = THREE;
   let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
   let turn = 'player', animQueue = Promise.resolve(), spiritGainMult = 1;
-  let dragoonTurns = 0, dots = [], enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
+  let dragoonTurns = 0, enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
+  // Ailment carriers for the four party slots. The enemy carries its own `.ail` bag.
+  let partyAil = { player:{ail:{}}, serah:{ail:{}}, kael:{ail:{}}, lyra:{ail:{}} };
   let playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
   let ringState = null, arenaLight = null, dragoonWings = null;
   const arenaEls = { inlays: [], flames: [], ring: null, emblem: null, floorMat: null };
@@ -107,7 +109,9 @@ const Battle = (() => {
     if (!scene) buildScene();
     applyArenaTheme(typeof World !== 'undefined' ? World.zone : 'forest');
     active = true; enemy = worldEnemy;
-    dots = []; enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
+    enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
+    Combat.cureAll(enemy);
+    partyAil = { player:{ail:{}}, serah:{ail:{}}, kael:{ail:{}}, lyra:{ail:{}} };
     playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
     RPG.player.cheatDeathUsed = false;
     if (RPG.player.dragoonForm) endDragoon(true);
@@ -193,9 +197,11 @@ const Battle = (() => {
     update(0.016); // render one battle frame immediately so no world frame lingers
     ui('battle-ui').classList.remove('hidden');
     ui('hud').classList.remove('hidden');
+    document.body.classList.add('battle-mode');
     banner('⚔ ' + enemy.name.toUpperCase() + ' ⚔');
     AudioSys.play('encounter');
-    log(`A wild ${enemy.name} appears!`);
+    log(`A wild ${enemy.name} appears! ${affinityBrief()}`);
+    updateStatusUI();
     updateTurn('YOUR TURN');
     setTimeout(() => { if (active) showMenu(); }, 1200);
   }
@@ -223,6 +229,9 @@ const Battle = (() => {
     ui('battle-submenu').classList.add('hidden');
     ui('addition-ring').classList.add('hidden');
     ui('combo-counter').classList.add('hidden');
+    if (ui('addition-name')) ui('addition-name').classList.add('hidden');
+    if (ui('enemy-status')) ui('enemy-status').classList.add('hidden');
+    document.body.classList.remove('battle-mode');
     if (RPG.player.dragoonForm) endDragoon(true);
     if (victory) {
       World.removeEnemy(enemy);
@@ -237,13 +246,16 @@ const Battle = (() => {
   function showResults() {
     const p = RPG.player;
     const xpG = enemy.xp, goldG = RPG.gainGold(enemy.gold);
+    const prevLevel = p.level;
     const lvUps = RPG.gainXp(xpG);
+    const fresh = lvUps ? RPG.newlyUnlockedAdditions(prevLevel) : [];
     p.spirit = Math.min(100, p.spirit + 15);
     UI.refreshHUD();
     ui('results-title').textContent = 'VICTORY'; ui('results-title').classList.remove('defeat');
     ui('results-body').innerHTML =
       `<div>+${xpG} XP &nbsp;·&nbsp; +${goldG} gold &nbsp;·&nbsp; +15% spirit</div>` +
-      (lvUps ? `<div style="color:var(--gold-hi);font-size:20px">★ LEVEL UP! Now level ${p.level} ★<br><small>+3 attribute points · +1 skill point (press C / K)</small></div>` : '');
+      (lvUps ? `<div style="color:var(--gold-hi);font-size:20px">★ LEVEL UP! Now level ${p.level} ★<br><small>+3 attribute points · +1 skill point (press C / K)</small></div>` : '') +
+      (fresh.length ? `<div style="color:var(--lod-ice);font-size:16px;margin-top:6px">🌀 New Addition learned: <b>${fresh.map(a=>a.icon+' '+a.name).join(', ')}</b><br><small>Choose it in battle under <b>Additions</b>.</small></div>` : '');
     ui('results-screen').classList.remove('hidden');
     if (lvUps) AudioSys.play('levelup');
     ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); Main.toWorld(); };
@@ -283,23 +295,91 @@ const Battle = (() => {
       : 'YOUR TURN — ' + currentActor.toUpperCase());
     buildMenu();
     updateAllyBars();
+    updateStatusUI();
   }
   function hideMenu(){ ui('battle-menu').classList.add('hidden'); ui('battle-submenu').classList.add('hidden'); }
 
+  // ---------- ELEMENTAL RESOLUTION ----------
+  // Every point of damage the party puts on the enemy goes through here so affinity,
+  // ailment modifiers and the Shadow-Anchor shield are applied exactly once.
+  function dealToEnemy(raw, element, opts = {}) {
+    const zone = typeof World !== 'undefined' ? World.zone : 'forest';
+    const r = Combat.strike(enemy, raw, element || 'phys', zone);
+    let dmg = r.dmg;
+    if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed || 0) < 3) dmg = Math.max(1, Math.round(dmg * .15));
+    enemy.hpCur -= dmg;
+    if (opts.floater !== false) {
+      UI.floaterAt(project(enemyModel.group.position, opts.yOff || 2.3), dmg + (r.label ? ' ' + r.label : ''),
+        r.tag === 'weak' ? 'weak' : r.tag === 'resist' ? 'resist' : (opts.cls || ''));
+    }
+    // schools that carry a signature ailment get a roll, weighted by how badly it lands
+    if (opts.ailment !== false && element && element !== 'phys')
+      applyEnemyAilment(Combat.rollElementAilment(enemy, element, dmg, r.mult, opts.ailBonus || 0));
+    return { ...r, dmg };
+  }
+  function applyEnemyAilment(def) {
+    if (!def) return;
+    AudioSys.play(def.el === 'fire' ? 'fire' : def.el === 'ice' ? 'ice' : def.el === 'lightning' ? 'lightning' : 'hit');
+    log(`${enemy.name} is <b style="color:${def.color}">${def.name.toUpperCase()}</b> — ${def.desc}`);
+    updateStatusUI();
+  }
+  // A one-line read on what this thing fears, shown when the fight opens.
+  function affinityBrief() {
+    const zone = typeof World !== 'undefined' ? World.zone : 'forest';
+    const weak = [], strong = [];
+    for (const el of Combat.ELEMENT_KEYS) {
+      const tag = Combat.affinityTag(Combat.affinity(enemy, el, zone));
+      if (tag === 'weak') weak.push(Combat.ELEMENTS[el].icon);
+      else if (tag === 'resist') strong.push(Combat.ELEMENTS[el].icon);
+    }
+    return (weak.length ? `<span class="aff-weak">weak ${weak.join('')}</span> ` : '')
+         + (strong.length ? `<span class="aff-resist">resists ${strong.join('')}</span>` : '');
+  }
+  // ---------- STATUS STRIPS ----------
+  function ailChips(holder) {
+    return Combat.listAilments(holder)
+      .map(a => `<span class="ail-chip" style="border-color:${a.color};color:${a.color}" title="${a.name} — ${a.desc} (${a.turns} turn${a.turns>1?'s':''})">${a.icon}<i>${a.turns}</i></span>`)
+      .join('');
+  }
+  function updateStatusUI() {
+    const es = ui('enemy-status');
+    if (es) {
+      const zone = typeof World !== 'undefined' ? World.zone : 'forest';
+      const aff = enemy ? Combat.ELEMENT_KEYS.map(el => {
+        const tag = Combat.affinityTag(Combat.affinity(enemy, el, zone));
+        return tag ? `<span class="aff-pip ${tag}" title="${Combat.ELEMENTS[el].name}: ${tag === 'weak' ? 'weak to' : 'resists'}">${Combat.ELEMENTS[el].icon}</span>` : '';
+      }).join('') : '';
+      es.innerHTML = enemy ? `<span class="es-name">${enemy.name}</span>${aff}${ailChips(enemy)}` : '';
+      es.classList.toggle('hidden', !enemy || !active);
+    }
+    for (const who of ['player','serah','kael','lyra']) {
+      const el = ui(who + '-ail'); if (!el) continue;
+      el.innerHTML = ailChips(partyAil[who]);
+    }
+  }
+
   // ---------- ADDITION SYSTEM ----------
-  function runAddition(chainMax, onDone) {
+  /* Runs one named Addition. `add` carries its own beat count, timing windows and
+     ring speed, so Whirlwind Sting and Blazing Dynamo genuinely play differently. */
+  function runAddition(add, onDone) {
+    const chainMax = add.beats;
     let chain = 0, totalMult = 0, perfects = 0;
     const ring = ui('addition-ring'), shrink = ui('ring-shrink'), judge = ui('ring-judge'), combo = ui('combo-counter');
+    const nameEl = ui('addition-name');
+    if (nameEl) { nameEl.innerHTML = `${add.icon} ${add.name}<i>${chainMax} beats</i>`; nameEl.classList.remove('hidden'); }
     ring.classList.remove('hidden'); combo.classList.remove('hidden');
 
     function oneBeat() {
       if (!active || chain >= chainMax) { finish(); return; }
+      const last = chain === chainMax - 1;
       combo.textContent = chain > 0 ? `${chain} HIT${chain>1?'S':''}!` : 'READY…';
-      const dur = Math.max(.55, 1.0 - chain*.08); // speeds up each beat
+      combo.classList.toggle('finisher', last && !!add.finisher);
+      // each beat closes faster than the last — the chain fights you as it grows
+      const dur = Math.max(.42, add.speed - chain*.075);
       const startT = performance.now();
-      ringState = { t: 0, dur, pressed: false };
+      ringState = { t: 0, dur, pressed: false, window: add.window };
       AudioSys.play('swing');
-      lunge(playerModel, enemyModel, .35);
+      lunge(actorModel() || playerModel, enemyModel, .35);
 
       function frame(now) {
         if (!ringState || !active) return;
@@ -330,17 +410,18 @@ const Battle = (() => {
         judge.classList.remove('pop'); void judge.offsetWidth; judge.classList.add('pop');
         AudioSys.play(isPerf ? 'perfect' : 'hit');
         beatFX(enemyModel, chain, isPerf);
-        RPG.player.spirit = Math.min(100, RPG.player.spirit + (isPerf ? 6 : 4));
+        RPG.player.spirit = Math.min(100, RPG.player.spirit + (isPerf ? add.spirit : Math.round(add.spirit*.7)));
         UI.refreshHUD();
         setTimeout(oneBeat, 260);
       }
       ringState.judge = () => { // Space pressed
         const t = ringState.t;
+        const w = ringState.window;
         ringState.pressed = true;
         let verdict, q;
         const err = Math.abs(t - 1);
-        if (err <= .09) { verdict = 'PERFECT'; q = 1; }
-        else if (err <= .22) { verdict = 'GOOD'; q = .7; }
+        if (err <= w.perfect) { verdict = 'PERFECT'; q = 1; }
+        else if (err <= w.good) { verdict = 'GOOD'; q = .7; }
         else { verdict = 'MISS'; q = 0; }
         ringState = null;
         judgeBeat(verdict, q);
@@ -349,11 +430,19 @@ const Battle = (() => {
 
     function finish() {
       ring.classList.add('hidden');
-      combo.textContent = chain > 0 ? `${chain}-HIT ADDITION!` : '';
-      setTimeout(()=> combo.classList.add('hidden'), 900);
-      onDone(chain, totalMult, perfects);
+      if (nameEl) nameEl.classList.add('hidden');
+      const full = chain >= chainMax;
+      combo.textContent = chain > 0 ? (full ? `${add.name.toUpperCase()} — ${chain} HITS!` : `${chain}-HIT ADDITION!`) : '';
+      combo.classList.toggle('finisher', full && !!add.finisher);
+      setTimeout(()=> { combo.classList.add('hidden'); combo.classList.remove('finisher'); }, 900);
+      onDone(chain, totalMult, perfects, full);
     }
     oneBeat();
+  }
+  /* Allies don't have named Additions — they get an honest chain built from their stats. */
+  function allyAddition(who, chainMax) {
+    return { id:'ally_'+who, name:'Chain', icon:'⚔', beats:chainMax, mult:1,
+             window:{ perfect:.09, good:.22 }, speed:.98, spirit:3 };
   }
 
   function pressAddition() {
@@ -505,7 +594,15 @@ const Battle = (() => {
       b.onclick = () => { AudioSys.play('click'); fn(); };
       menu.appendChild(b);
     };
-    mkBtn('⚔ Attack', 'Addition combo', () => doAttack());
+    if (isPlayer) {
+      const add = RPG.currentAddition();
+      const lv = RPG.additionLevel(add.id);
+      mkBtn(`${add.icon} ${add.name}`,
+        `${add.beats} beats · mastery ${lv}/${Combat.MASTERY_MAX}${add.finisher ? ' · ' + Combat.ELEMENTS[add.finisher.element].icon + ' finisher' : ''}`,
+        () => doAttack());
+      if (Combat.unlockedAdditions(p.cls, p.level).length > 1)
+        mkBtn('🌀 Additions', 'switch chain — free action', () => openAdditions());
+    } else mkBtn('⚔ Attack', 'Addition combo', () => doAttack());
     mkBtn('✦ Skills', 'MP cost', () => openSkills());
     mkBtn('✚ Items', 'potions', () => openItems());
     if (isPlayer) mkBtn('🐉 Dragoon', p.dragoonForm ? 'DRAGOON ACTIVE' : `needs 100% (${Math.floor(p.spirit)}%)`,
@@ -553,30 +650,74 @@ const Battle = (() => {
     hideMenu();
     const p = RPG.player;
     const isPlayer = currentActor === 'player';
-    const model = actorModel();
     const A = actorStats();
-    const atk = A.atk, critCh = A.critCh, maxChain = A.chainMax;
-    runAddition(maxChain, async (chain, totalMult) => {
+    const atk = A.atk, critCh = A.critCh;
+    const add = isPlayer ? RPG.currentAddition() : allyAddition(currentActor, A.chainMax);
+    const mastery = isPlayer ? Combat.masteryMult(RPG.additionUses(add.id)) : 1;
+    runAddition(add, async (chain, totalMult, perfects, full) => {
       if (!active) return;
       if (chain > 0) {
-        let dmg = atk * (0.55 + totalMult*0.45);
+        // chain scalar × the Addition's own weight × how well you know it × gear
+        let dmg = atk * (0.45 + totalMult*0.42) * add.mult * mastery;
+        if (isPlayer) dmg *= (1 + (p.additionBonus || 0));
         if (isPlayer && p.dragoonForm) dmg *= 1.6;
+        dmg *= Combat.outgoingMult(partyAil[currentActor]);
         const crit = Math.random() < critCh;
         if (crit) dmg *= p.critMult;
         dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
         if (isPlayer && playerBuffs.doubleHit) { dmg = Math.round(dmg * 1.8); playerBuffs.doubleHit = false; log('Shadow clone strikes!'); }
-        if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
         slashFX(enemyModel, crit);
         if (crit) fovPunch();
-        enemy.hpCur -= dmg;
-        UI.floaterAt(project(enemyModel.group.position, 2.2), dmg, crit ? 'crit' : '');
-        if (isPlayer && p.lifeLeech > 0) { p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg*p.lifeLeech)); }
-        log(`${isPlayer?'': currentActor.charAt(0).toUpperCase()+currentActor.slice(1)+': '}${chain}-hit Addition for ${dmg} damage${crit?' — CRITICAL!':''}`);
-        await wait(650);
+        const res = dealToEnemy(dmg, 'phys', { cls: crit ? 'crit' : '', ailment: false });
+        if (isPlayer && p.lifeLeech > 0) { p.hp = Math.min(p.maxHp, p.hp + Math.round(res.dmg*p.lifeLeech)); }
+        log(`${isPlayer ? add.name : currentActor.charAt(0).toUpperCase()+currentActor.slice(1)+': '}` +
+            ` — ${chain}-hit Addition for ${res.dmg}${crit?' — CRITICAL!':''}${res.label?' — '+res.label:''}`);
+        // credit mastery for the chain you actually threw, even if it was the killing blow
+        const masteryUp = isPlayer ? RPG.logAdditionUse(add.id) : 0;
+        await wait(560);
+        if (checkEnemyDead()) { if (masteryUp) announceMastery(add, masteryUp); return; }
+        // the finisher only fires when the whole chain landed — that's what the last beat is for
+        if (full && add.finisher && enemy.hpCur > 0) {
+          await finisherStrike(add, res.dmg);
+          if (checkEnemyDead()) { if (masteryUp) announceMastery(add, masteryUp); return; }
+        }
+        if (masteryUp) { announceMastery(add, masteryUp); await wait(900); }
+      } else {
+        // whiffing the opening beat still swings the weapon — a glancing blow, no chain credit
+        const glance = Math.max(1, Math.round(atk * .3 * Combat.outgoingMult(partyAil[currentActor])));
+        slashFX(enemyModel, false);
+        const res = dealToEnemy(glance, 'phys', { ailment: false });
+        log(`The Addition breaks apart — only a glancing blow for ${res.dmg}.`);
+        await wait(500);
         if (checkEnemyDead()) return;
-      } else log('The Addition failed — no damage!');
+      }
       afterActorAction();
     });
+  }
+  function announceMastery(add, lv) {
+    banner(`✦ ${add.name.toUpperCase()} — MASTERY ${lv} ✦`);
+    AudioSys.play('levelup');
+    toast(`✦ <b>${add.name}</b> reaches Mastery ${lv} — +${Math.round((Combat.masteryMult(RPG.additionUses(add.id))-1)*100)}% chain damage.`, 'var(--gold)');
+  }
+  /* The last beat of a full chain carries its own school — and often an ailment with it. */
+  async function finisherStrike(add, chainDmg) {
+    const f = add.finisher;
+    const el = f.element || 'phys';
+    banner(`${Combat.ELEMENTS[el].icon} ${add.name.toUpperCase()} — FINISH ${Combat.ELEMENTS[el].icon}`);
+    elementalFX(el, enemyModel);
+    flashRing(enemyModel.group.position, Combat.ELEMENTS[el].hex, 7, 520);
+    fovPunch(); shake(.9);
+    await wait(260);
+    const res = dealToEnemy(Math.round(chainDmg * .45), el, { cls:'perfect', yOff:2.7, ailment:false });
+    log(`<b>${add.name}</b> finishes for ${res.dmg} ${Combat.ELEMENTS[el].name.toLowerCase()} damage${res.label?' — '+res.label:''}.`);
+    await wait(520);
+    // give the finisher line a beat to be read before the ailment banner replaces it
+    if (f.ailment) {
+      const zone = typeof World !== 'undefined' ? World.zone : 'forest';
+      const affMult = Combat.affinity(enemy, el, zone);
+      const got = Combat.inflict(enemy, f.ailment, res.dmg, Math.min(.95, (f.chance || .5) * Math.max(.5, affMult)));
+      if (got) { applyEnemyAilment(got); await wait(420); }
+    }
   }
 
   async function doSkill(skill) {
@@ -605,6 +746,8 @@ const Battle = (() => {
       if (skill.id === 'smoke_bomb') enemyDebuff.miss = .3 + skill.per*rank;
       elementalFX('arcane', enemyModel);
       log(`${enemy.name} is weakened!`);
+      // Dragon Roar rattles a thing badly enough to curse it
+      if (skill.id === 'dragon_roar') applyEnemyAilment(Combat.inflict(enemy, 'curse', 0, .6));
     } else { // damage skill
       if (skill.type !== 'phys') { // cast pose: raise the casting arm
         const arm = playerModel.armR, st = performance.now();
@@ -618,18 +761,18 @@ const Battle = (() => {
       if (skill.dragoonBoost && p.dragoonForm) mult *= skill.dragoonBoost;
       let dmg = p.attack * p.spellPower * mult;
       if (p.dragoonForm) dmg *= 1.6;
+      dmg *= Combat.outgoingMult(partyAil.player);
       let crit = skill.alwaysCrit || Math.random() < (p.critChance + (skill.critBonus||0));
       if (crit) dmg *= p.critMult;
       if (playerBuffs.empower) { dmg *= 1.5; playerBuffs.empower = false; }
       dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
-      if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
       elementalFX(skill.type, enemyModel);
-      enemy.hpCur -= dmg;
-      UI.floaterAt(project(enemyModel.group.position, 2.4), dmg, crit?'crit':'perfect');
-      log(`${skill.name} hits for ${dmg} ${skill.type} damage${crit?' — CRITICAL!':''}`);
-      if (skill.dot) dots.push({ turns: 3, dmg: Math.round(dmg*.15), src: skill.type });
-      if (skill.slow) enemy.speed = Math.max(.5, enemy.speed - .3);
-      if (p.lifeLeech > 0) p.hp = Math.min(p.maxHp, p.hp + Math.round(dmg*p.lifeLeech));
+      // skills flagged `dot` are built to stick — they get a much better ailment roll
+      const res = dealToEnemy(dmg, skill.type, { cls: crit?'crit':'perfect', yOff:2.4, ailBonus: skill.dot ? .5 : 0 });
+      log(`${skill.name} hits for ${res.dmg} ${skill.type} damage${crit?' — CRITICAL!':''}${res.label?' — <b>'+res.label+'</b>':''}`);
+      if (skill.slow) { enemy.speed = Math.max(.5, enemy.speed - .3);
+        applyEnemyAilment(Combat.inflict(enemy, 'chill', res.dmg, .7)); }
+      if (p.lifeLeech > 0) p.hp = Math.min(p.maxHp, p.hp + Math.round(res.dmg*p.lifeLeech));
       p.spirit = Math.min(100, p.spirit + 8); UI.refreshHUD();
       await wait(700);
       if (checkEnemyDead()) return;
@@ -653,6 +796,12 @@ const Battle = (() => {
       elementalFX(isLyra ? 'fire' : 'ice', model); AudioSys.play('heal');
       UI.floaterAt(project(playerModel.group.position, 2.2), '+'+amt, 'perfect');
       log(`${isSerah ? "Serah's Wingly Light" : isLyra ? "Lyra's Cauterize sears the wounds shut —" : "Kael's rally"} restores ${amt} HP.`);
+      // each healer clears what it is good for: Wingly light burns off a curse,
+      // Lyra's cautery closes bleeding and boils out poison
+      const cured = isSerah ? ['curse','chill'] : isLyra ? ['bleed','poison','chill'] : ['bleed'];
+      const gone = cured.filter(id => Combat.hasAilment(partyAil.player, id));
+      for (const id of gone) Combat.cure(partyAil.player, id);
+      if (gone.length) { log(`…and clears <b>${gone.map(id => Combat.AILMENTS[id].name).join(', ')}</b>.`); updateStatusUI(); }
       UI.refreshHUD();
     } else if (skill.type === 'buff') {
       if (isSerah) { partyDodge = skill.mult; partyDodgeTurns = 3;
@@ -675,16 +824,14 @@ const Battle = (() => {
       } else lunge(model, enemyModel, 1.0); // spear thrust
       await wait(200);
       await projectileFX(model, enemyModel, isSerah ? 0xbfe8ff : isLyra ? 0xff8a3a : 0xffcc66);
-      let dmg = ss.attack * skill.mult;
+      let dmg = ss.attack * skill.mult * Combat.outgoingMult(partyAil[who]);
       const crit = Math.random() < (ss.critChance + (skill.critBonus||0));
       if (crit) dmg *= ss.critMult;
       dmg = Math.max(1, Math.round(dmg * rnd(.9,1.1)));
-      if (enemy.shielded && (RPG.player.flags?.anchorsDestroyed||0) < 3) dmg = Math.max(1, Math.round(dmg*.15));
       if (isLyra) elementalFX('fire', enemyModel); else slashFX(enemyModel, crit);
       if (crit) fovPunch();
-      enemy.hpCur -= dmg;
-      UI.floaterAt(project(enemyModel.group.position, 2.4), dmg, crit?'crit':'perfect');
-      log(`${isSerah?'Serah':isLyra?'Lyra':'Kael'}'s ${skill.name} hits for ${dmg}${crit?' — CRITICAL!':''}`);
+      const res = dealToEnemy(dmg, skill.type || 'phys', { cls: crit?'crit':'perfect', yOff:2.4 });
+      log(`${isSerah?'Serah':isLyra?'Lyra':'Kael'}'s ${skill.name} hits for ${res.dmg}${crit?' — CRITICAL!':''}${res.label?' — <b>'+res.label+'</b>':''}`);
       await wait(500);
       if (checkEnemyDead()) return;
     }
@@ -810,14 +957,23 @@ const Battle = (() => {
     if (tgt === 'lyra') return { model: lyraModel, def: RPG.lyraStats().defense, defending: lyraDefending, dodgeBonus: 0, isPlayer: false };
     return { model: playerModel, def: p.defense, defending: playerBuffs.defending, isPlayer: true };
   }
-  async function damageAlly(tgt, dmg, verb) {
+  /* Allies share the leader's wards at half strength — they fight in his light. */
+  function resistOf(tgt) {
+    const r = RPG.player.resist || { fire:0, ice:0, lightning:0, arcane:0 };
+    if (tgt === 'player') return r;
+    return { fire:r.fire*.5, ice:r.ice*.5, lightning:r.lightning*.5, arcane:r.arcane*.5 };
+  }
+  async function damageAlly(tgt, dmg, verb, element = 'phys') {
     const p = RPG.player;
     const T = targetInfo(tgt);
     if (T.defending) dmg *= .5;
     if (T.isPlayer) dmg *= (1 - Math.min(.6, playerBuffs.defPct));
     dmg *= (1 - partyDef);
     const dr = T.def / (T.def + 120);
-    dmg = Math.max(1, Math.round(dmg * (1-dr) * rnd(.85,1.15)));
+    dmg = dmg * (1-dr);
+    const mit = Combat.mitigate(dmg, element, resistOf(tgt));
+    dmg = Math.max(1, Math.round(mit.dmg * rnd(.85,1.15)));
+    const warded = mit.cut >= .12 ? ` <span class="aff-resist">(warded ${Math.round(mit.cut*100)}%)</span>` : '';
     const label = tgt === 'player' ? 'you' : tgt;
     if (tgt === 'serah') p.serah.hp -= dmg;
     else if (tgt === 'kael') p.kael.hp -= dmg;
@@ -825,7 +981,12 @@ const Battle = (() => {
     else p.hp -= dmg;
     AudioSys.play('playerHurt'); shake(.5); vignette();
     UI.floaterAt(project(T.model.group.position, 2.1), dmg, '');
-    log(`${enemy.name} ${verb} ${label} for ${dmg}.`);
+    log(`${enemy.name} ${verb} ${label} for ${dmg}.${warded}`);
+    // elemental blows leave their mark on the party too
+    if (element && element !== 'phys') {
+      const def = Combat.rollElementAilment(partyAil[tgt], element, dmg, 1 - (resistOf(tgt)[element] || 0));
+      if (def) { log(`${label === 'you' ? 'You are' : label + ' is'} <b style="color:${def.color}">${def.name.toUpperCase()}</b> — ${def.desc}`); updateStatusUI(); }
+    }
     if (tgt === 'serah' && p.serah.hp <= 0) { p.serah.hp = 0; serahKO = true; collapseAlly(allyModel, 'Serah'); }
     else if (tgt === 'kael' && p.kael.hp <= 0) { p.kael.hp = 0; kaelKO = true; collapseAlly(kaelModel, 'Kael'); }
     else if (tgt === 'lyra' && p.lyra.hp <= 0) { p.lyra.hp = 0; lyraKO = true; collapseAlly(lyraModel, 'Lyra'); }
@@ -848,6 +1009,27 @@ const Battle = (() => {
     }
     return dmg;
   }
+  /* Ailment ticks bypass armour and guards by design — you can't block a poison. */
+  async function dotDamage(who, amount, def) {
+    const p = RPG.player;
+    const T = targetInfo(who); if (!T.model) return;
+    const dmg = Math.max(1, Math.round(amount));
+    if (who === 'serah') p.serah.hp -= dmg;
+    else if (who === 'kael') p.kael.hp -= dmg;
+    else if (who === 'lyra') p.lyra.hp -= dmg;
+    else p.hp -= dmg;
+    UI.floaterAt(project(T.model.group.position, 2.1), dmg, 'dot');
+    log(`<b style="color:${def.color}">${def.name}</b> costs ${who === 'player' ? 'you' : t2(who)} ${dmg} HP.`);
+    if (who === 'serah' && p.serah.hp <= 0) { p.serah.hp = 0; serahKO = true; collapseAlly(allyModel, 'Serah'); }
+    else if (who === 'kael' && p.kael.hp <= 0) { p.kael.hp = 0; kaelKO = true; collapseAlly(kaelModel, 'Kael'); }
+    else if (who === 'lyra' && p.lyra.hp <= 0) { p.lyra.hp = 0; lyraKO = true; collapseAlly(lyraModel, 'Lyra'); }
+    updateAllyBars(); UI.refreshHUD();
+    if (who === 'player' && p.hp <= 0) {
+      if (p.cheatDeath && !p.cheatDeathUsed) { p.hp = 1; p.cheatDeathUsed = true; log('★ UNDYING WILL — you refuse to fall!'); UI.refreshHUD(); return; }
+      await wait(600); AudioSys.play('defeat'); banner('YOU HAVE FALLEN');
+      await wait(1400); end(false);
+    }
+  }
   function collapseAlly(model, name) {
     log(`💔 ${name} is down! They cannot act until the battle ends.`);
     const g = model.group;
@@ -858,13 +1040,21 @@ const Battle = (() => {
       if (t < 1) requestAnimationFrame(frame);
     })(st);
   }
-  async function hitTarget(tgt, baseDmg, verb) {
+  async function hitTarget(tgt, baseDmg, verb, element) {
     const kindSfx = { wolf:'growl', golem:'stomp', wraith:'whoosh', humanoid:'swing' }[enemy.kind] || 'swing';
     AudioSys.play(kindSfx);
     lunge(enemyModel, targetInfo(tgt).model, .8);
     await wait(250);
-    return damageAlly(tgt, baseDmg, verb);
+    return damageAlly(tgt, baseDmg, verb, element || enemyElement());
   }
+  // What school this thing swings with — wraiths are never really hitting you with a fist.
+  const KIND_ELEMENT = { wraith:'arcane', wolf:'phys', golem:'phys', humanoid:'phys' };
+  const BOSS_ELEMENT = { stormcaller:'lightning', tyrant:'ice', warden:'phys', herald:'arcane', melbu:'arcane' };
+  function enemyElement() {
+    return (enemy.bossId && BOSS_ELEMENT[enemy.bossId]) || KIND_ELEMENT[enemy.kind] || 'phys';
+  }
+  // Everything the enemy deals is scaled by what's riding it — chill, curse, poison.
+  function enemyOut(base) { return base * Combat.outgoingMult(enemy); }
 
   // ---------- ENEMY SPECIAL ATTACKS — unique per enemy family ----------
   async function specialAttack() {
@@ -884,7 +1074,7 @@ const Battle = (() => {
       for (const tgt of targets) {
         await projectileFX(enemyModel, targetInfo(tgt).model, 0x9ad4ff);
         AudioSys.play('lightning');
-        await damageAlly(tgt, enemy.dmg * .7, 'electrocutes');
+        await damageAlly(tgt, enemyOut(enemy.dmg * .7), 'electrocutes', 'lightning');
       }
       scene.remove(flash);
       AudioSys.play('thunder');
@@ -904,13 +1094,16 @@ const Battle = (() => {
           if (t<1) requestAnimationFrame(frame); else h.scale.setScalar(1); })(st);
       }
       await wait(300);
-      await damageAlly(tgt, enemy.dmg * 1.4, 'savagely bites');
+      await damageAlly(tgt, enemyOut(enemy.dmg * 1.4), 'savagely bites', 'phys');
+      // teeth leave a wound that keeps opening
+      const bleed = Combat.inflict(partyAil[tgt], 'bleed', enemy.dmg * .9, .6);
+      if (bleed) { log(`${tgt === 'player' ? 'You are' : tgt + ' is'} <b style="color:${bleed.color}">BLEEDING</b>.`); updateStatusUI(); }
     } else if (kind === 'wraith') {
       const tgt = pickTarget();
       banner('🌀 VOID BOLT 🌀');
       log(`${enemy.name} hurls a shrieking void bolt!`);
       await projectileFX(enemyModel, targetInfo(tgt).model, 0xcc88ff);
-      await damageAlly(tgt, enemy.dmg * 1.5, 'blasts with void energy');
+      await damageAlly(tgt, enemyOut(enemy.dmg * 1.5), 'blasts with void energy', 'arcane');
     } else if (kind === 'golem') {
       banner('💥 SEISMIC SLAM 💥');
       log(`${enemy.name} slams the ground — the shockwave hits everyone!`);
@@ -931,9 +1124,9 @@ const Battle = (() => {
       if (!serahKO) targets.push('serah');
       if (kaelModel && !kaelKO) targets.push('kael');
       if (lyraModel && !lyraKO) targets.push('lyra');
-      for (const tgt of targets) { await damageAlly(tgt, enemy.dmg * .65, 'rocks'); }
+      for (const tgt of targets) { await damageAlly(tgt, enemyOut(enemy.dmg * .65), 'rocks', 'phys'); }
     } else {
-      // humanoid flourish — two rapid slashes at random targets
+      // humanoid flourish — two rapid slashes at random targets, cursed steel and all
       banner('⚔ CURSED FLOURISH ⚔');
       log(`${enemy.name} unleashes a blinding sword flourish!`);
       for (let i=0;i<2;i++){
@@ -941,7 +1134,7 @@ const Battle = (() => {
         slashFX(targetInfo(tgt).model, true);
         AudioSys.play('swing');
         await wait(280);
-        await damageAlly(tgt, enemy.dmg * .8, 'slashes');
+        await damageAlly(tgt, enemyOut(enemy.dmg * .8), 'slashes', i === 1 ? 'arcane' : 'phys');
       }
     }
   }
@@ -986,13 +1179,28 @@ const Battle = (() => {
       }
     }
 
-    // DOT ticks on enemy
-    for (const d of dots) {
-      if (d.turns > 0) { enemy.hpCur -= d.dmg; UI.floaterAt(project(enemyModel.group.position, 2.6), d.dmg, '');
-        log(`${enemy.name} suffers ${d.dmg} ${d.src} damage.`); d.turns--; await wait(350); }
+    // ---- ailments burn down before the enemy gets to move ----
+    const eTick = Combat.tick(enemy);
+    for (const t of eTick.ticks) {
+      enemy.hpCur -= t.dmg;
+      UI.floaterAt(project(enemyModel.group.position, 2.6), t.dmg, 'dot');
+      log(`${enemy.name} suffers ${t.dmg} from <b style="color:${t.def.color}">${t.def.name}</b>.`);
+      await wait(320);
     }
-    dots = dots.filter(d => d.turns > 0);
+    for (const e of eTick.expired) log(`${t2(e.def.name)} fades from ${enemy.name}.`);
+    if (eTick.ticks.length || eTick.expired.length) updateStatusUI();
     if (checkEnemyDead()) return;
+
+    // shocked things lose their footing entirely
+    const stunned = Combat.skipsTurn(enemy);
+    if (stunned) {
+      banner('⚡ ' + stunned.name.toUpperCase() + ' ⚡');
+      log(`${enemy.name} convulses — it loses its turn!`);
+      AudioSys.play('lightning');
+      await wait(900);
+      await endEnemyTurn();
+      return;
+    }
 
     // ---- enemy special attack (25% chance, unique per enemy kind) ----
     if (Math.random() < .25) { await specialAttack(); }
@@ -1011,9 +1219,33 @@ const Battle = (() => {
     } else if (Math.random() < tDodge) {
       log(`${targetSerah ? 'Serah dodges' : targetKael ? 'Kael dodges' : targetLyra ? 'Lyra dodges' : 'You dodge'} the attack!`); AudioSys.play('swing');
     } else {
-      await hitTarget(tgt, enemy.dmg, 'hits');
+      await hitTarget(tgt, enemyOut(enemy.dmg), 'hits');
     }
     }
+
+    await endEnemyTurn();
+  }
+  const t2 = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  /* Everything that has to happen once the enemy's move is spent, whether it
+     attacked, stunned out, or fizzled — party ailments burn, timers tick, turn returns. */
+  async function endEnemyTurn() {
+    if (!active) return;
+    const p = RPG.player;
+    // party ailments burn down
+    const koFor = { serah: () => serahKO, kael: () => kaelKO, lyra: () => lyraKO };
+    for (const who of ['player','serah','kael','lyra']) {
+      if (who !== 'player' && (!targetInfo(who).model || koFor[who]())) { Combat.cureAll(partyAil[who]); continue; }
+      const r = Combat.tick(partyAil[who]);
+      for (const t of r.ticks) {
+        await dotDamage(who, t.dmg, t.def);
+        if (!active) return;
+        await wait(220);
+      }
+      for (const e of r.expired) log(`${t2(e.def.name)} fades from ${who === 'player' ? 'you' : t2(who)}.`);
+    }
+    updateStatusUI();
+    if (!active) return;
 
     playerBuffs.defending = false; serahDefending = false; kaelDefending = false; lyraDefending = false;
     // timers
@@ -1145,6 +1377,30 @@ const Battle = (() => {
     ui('battle-menu').classList.add('hidden');
     sub.classList.remove('hidden');
   }
+  /* Switching Additions costs nothing — the cost is having to hit the new rhythm. */
+  function openAdditions() {
+    const sub = ui('battle-submenu'); sub.innerHTML = '';
+    const p = RPG.player;
+    for (const a of Combat.additionsFor(p.cls)) {
+      const locked = p.level < a.req;
+      const uses = RPG.additionUses(a.id), lv = Combat.masteryLevel(uses), next = Combat.masteryNext(uses);
+      const b = document.createElement('button');
+      b.className = 'battle-btn addition-opt' + (a.id === RPG.currentAddition().id ? ' selected' : '');
+      b.innerHTML = `${a.icon} ${a.name} ${locked ? `<small>🔒 unlocks at level ${a.req}</small>`
+        : `<small>${a.beats} beats · ×${a.mult.toFixed(2)} · mastery ${lv}/${Combat.MASTERY_MAX}` +
+          `${next ? ` (${uses}/${next})` : ' — MAXED'}` +
+          `${a.finisher ? ` · ${Combat.ELEMENTS[a.finisher.element].icon} finisher` : ''}<br>${a.desc}</small>`}`;
+      b.disabled = locked;
+      b.onclick = () => { AudioSys.play('click'); RPG.setAddition(a.id); showMenu(); };
+      sub.appendChild(b);
+    }
+    const back = document.createElement('button');
+    back.className = 'battle-btn'; back.innerHTML = '↩ Back';
+    back.onclick = () => { AudioSys.play('click'); showMenu(); };
+    sub.appendChild(back);
+    ui('battle-menu').classList.add('hidden');
+    sub.classList.remove('hidden');
+  }
   function openItems() {
     const sub = ui('battle-submenu'); sub.innerHTML = '';
     const p = RPG.player;
@@ -1173,10 +1429,13 @@ const Battle = (() => {
   }
   function onResize(){ if (camera){ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); } }
 
-  let t = 0, lastBossHp = -1;
+  let t = 0, lastBossHp = -1, statusT = 0;
   function update(dt) {
     if (!active || !scene) return;
     t += dt;
+    // the status strips are cheap and change from many code paths — keep them live
+    statusT += dt;
+    if (statusT > .25) { statusT = 0; updateStatusUI(); }
     if (enemy && enemy.boss && enemy.hpCur !== lastBossHp) {
       lastBossHp = enemy.hpCur;
       ui('boss-fill').style.width = Math.max(0, enemy.hpCur/enemy.maxHp*100) + '%';
@@ -1301,6 +1560,16 @@ const Battle = (() => {
     return { group:g, body, armL, armR, legL, legR, sword, head };
   }
 
-  return { start, update, pressAddition, bindMenu, onResize,
+  // test/debug window into live battle state — the ailment bags are otherwise unreachable
+  function debug() {
+    return {
+      actor: currentActor, turn,
+      enemy: enemy ? { name: enemy.name, kind: enemy.kind, bossId: enemy.bossId,
+                       hp: enemy.hpCur, maxHp: enemy.maxHp,
+                       ail: Object.keys(enemy.ail || {}) } : null,
+      party: Object.fromEntries(Object.entries(partyAil).map(([k,v]) => [k, Object.keys(v.ail || {})])),
+    };
+  }
+  return { start, update, pressAddition, bindMenu, onResize, debug,
     get active(){ return active; }, get scene(){ return scene; } };
 })();

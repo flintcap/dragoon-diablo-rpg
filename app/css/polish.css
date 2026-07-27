@@ -1,16 +1,78 @@
 
 /* ---------- PARTY FRAMES & VIGNETTE ---------- */
-#party-frames { position:absolute; top:88px; left:18px; background:#0d1220cc;
+/* sits clear of the hero's own orb/bar stack, which runs to ~y=118 */
+#party-frames { position:absolute; top:126px; left:18px; background:#0d1220cc;
   border:1px solid var(--panel-edge); border-radius:5px; padding:6px 12px 8px; z-index:26; }
 .pf-title { font-size:10px; letter-spacing:2px; color:var(--gold); margin-bottom:4px; }
-#serah-bars, #kael-bars, #lyra-bars { position: static !important; display:flex; align-items:center; gap:8px; margin-top:4px; transition:opacity .3s; }
+#leader-row, #serah-bars, #kael-bars, #lyra-bars { position: static !important; display:flex; align-items:center; gap:8px; margin-top:4px; transition:opacity .3s; }
+#leader-row { min-height:14px; }
+.leader-label { font-size:11px; letter-spacing:2px; color:var(--gold-hi); text-shadow:0 1px 3px #000; }
 
-/* ---------- LYRA BARS ---------- */
-#lyra-bars { top:140px; left:18px; }
+/* every party member's bar pair — these were invisible before: no fill colours were ever defined */
+.serah-label, .kael-label { font-size:11px; letter-spacing:2px; text-shadow:0 1px 3px #000; }
+.serah-label { color:#bfe8ff; }
+.kael-label { color:#e8c46a; }
+#serah-bars .bar, #kael-bars .bar, #lyra-bars .bar { width:110px; height:8px; margin-top:0; }
+.serah-hp-bar div { background:linear-gradient(180deg,#9fd4ff,#2a6a9e 60%,#0a2440); height:100%; transition:width .25s; }
+.serah-mp-bar div { background:linear-gradient(180deg,#8ab6ff,#3a4a9e 60%,#141a4a); height:100%; transition:width .25s; }
+.kael-hp-bar div { background:linear-gradient(180deg,#e8c46a,#9e7a2a 60%,#402c05); height:100%; transition:width .25s; }
+.kael-mp-bar div { background:linear-gradient(180deg,#8ab6ff,#3a4a9e 60%,#141a4a); height:100%; transition:width .25s; }
 .lyra-label { font-size:11px; letter-spacing:2px; color:#ff9a5c; text-shadow:0 1px 3px #000; }
-#lyra-bars .bar { width:110px; height:8px; margin-top:0; }
 .lyra-hp-bar div { background:linear-gradient(180deg,#ff9a5c,#a04a1a 60%,#4a1a05); height:100%; transition:width .25s; }
 .lyra-mp-bar div { background:linear-gradient(180deg,#c08aff,#6a3a9e 60%,#2a124a); height:100%; transition:width .25s; }
+
+/* ---------- AILMENT CHIPS & AFFINITY PIPS ---------- */
+.ail-strip { display:inline-flex; gap:3px; min-height:16px; }
+.ail-chip { display:inline-flex; align-items:center; gap:1px; font-size:11px; line-height:1;
+  padding:2px 4px; border:1px solid; border-radius:3px; background:#00000066; }
+.ail-chip i { font-style:normal; font-size:9px; opacity:.85; }
+#enemy-status { position:absolute; top:52px; left:50%; transform:translateX(-50%); z-index:27;
+  display:flex; align-items:center; gap:6px; padding:5px 12px; background:#0d1220cc;
+  border:1px solid var(--panel-edge); border-radius:5px; font-size:12px; pointer-events:none; }
+#enemy-status.hidden { display:none; }
+.es-name { color:#e8b4b4; letter-spacing:1px; text-transform:uppercase; font-size:11px; }
+.aff-pip { font-size:12px; padding:1px 3px; border-radius:3px; }
+.aff-pip.weak { background:#5a1a1a99; box-shadow:0 0 6px #ff555566; }
+.aff-pip.resist { background:#1a3a5a99; opacity:.65; }
+.aff-weak { color:#ff8a5c; font-weight:bold; }
+.aff-resist { color:#7fa8c8; }
+.floater.weak { color:#ff9a4d !important; font-size:26px; text-shadow:0 0 12px #ff5522; }
+.floater.resist { color:#8fb4d0 !important; font-size:18px; opacity:.85; }
+.floater.dot { color:#c8e07a !important; font-size:17px; }
+
+/* ---------- ADDITION NAME + FINISHER ---------- */
+#addition-name { position:absolute; top:calc(50% - 190px); left:50%; transform:translateX(-50%);
+  z-index:31; font-size:19px; letter-spacing:3px; color:var(--gold-hi); text-shadow:0 2px 10px #000;
+  text-align:center; pointer-events:none; }
+#addition-name i { display:block; font-style:normal; font-size:11px; letter-spacing:2px; color:var(--dim); margin-top:2px; }
+#addition-name.hidden { display:none; }
+#combo-counter.finisher { color:#ffdd66; text-shadow:0 0 26px #ff9a3a, 0 2px 6px #000; }
+.battle-btn.addition-opt.selected { border-color:var(--gold-hi); box-shadow:0 0 10px #f5d76e44; }
+.battle-btn.addition-opt small { line-height:1.45; }
+
+/* the world hotbar sits exactly where the battle log lives — battles own the bottom strip */
+body.battle-mode #hotbar { display:none; }
+
+/* ---------- CHARACTER SHEET: RESISTANCES + ADDITION MASTERY ---------- */
+.sheet-sub { margin:16px 0 6px; color:var(--gold); font-size:12px; letter-spacing:2px; }
+.sheet-sub small { color:var(--dim); letter-spacing:0; font-size:11px; }
+#resist-list { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.res-cell { display:flex; align-items:center; justify-content:center; gap:6px; padding:7px 4px;
+  background:#0f172899; border:1px solid #1c2438; border-radius:4px; font-size:15px; }
+.res-cell b { color:var(--dim); font-size:14px; }
+.res-cell b.res-on { color:#8ad86a; }
+#addition-list { display:flex; flex-direction:column; gap:5px; }
+.add-row { display:grid; grid-template-columns:26px 1fr auto; grid-template-rows:auto 4px; gap:2px 8px;
+  align-items:center; padding:6px 9px; background:#0f172899; border:1px solid #1c2438; border-radius:4px; }
+.add-row.active { border-color:var(--gold); background:#181f3399; }
+.add-row.locked { opacity:.45; }
+.add-icon { font-size:17px; grid-row:1; }
+.add-name { color:#dfe6f2; font-size:13px; grid-row:1; }
+.add-name small { display:block; color:var(--dim); font-size:11px; }
+.add-mastery { color:var(--gold-hi); font-size:12px; text-align:right; grid-row:1; }
+.add-mastery i { display:block; font-style:normal; font-size:10px; color:var(--dim); }
+.add-track { grid-column:1/-1; grid-row:2; height:4px; background:#0a0f1c; border-radius:2px; overflow:hidden; }
+.add-fill { display:block; height:100%; background:linear-gradient(90deg,#8a6a1a,#f5d76e); transition:width .3s; }
 #vignette { position:fixed; inset:0; z-index:34; pointer-events:none; opacity:0;
   background:radial-gradient(ellipse at center, transparent 55%, rgba(160,10,20,.45) 100%); }
 #vignette.hit { animation:vigHit .35s ease-out; }

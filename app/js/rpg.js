@@ -107,12 +107,17 @@ const RPG = (() => {
     { name:'Deadly', stat:'critPct', v:[.04,.12], rar:2 }, { name:'Swift', stat:'spdPct', v:[.05,.15], rar:2 },
     { name:'Dragon\'s', stat:'strFlat', v:[4,12], rar:3 }, { name:'Serpent\'s', stat:'dexFlat', v:[4,12], rar:3 },
     { name:'Sage\'s', stat:'eneFlat', v:[4,12], rar:3 }, { name:'Titan\'s', stat:'vitFlat', v:[4,12], rar:3 },
+    // elemental wards — the answer to a zone that keeps burning/freezing you out
+    { name:'Emberproof', stat:'resFire', v:[.08,.25], rar:2 }, { name:'Rimeproof', stat:'resIce', v:[.08,.25], rar:2 },
+    { name:'Grounded', stat:'resLightning', v:[.08,.25], rar:2 }, { name:'Warded', stat:'resArcane', v:[.08,.25], rar:2 },
   ];
   const SUFFIXES = [
     { name:'of the Bear', stat:'hpFlat', v:[12,50], rar:1 }, { name:'of the Fox', stat:'dodgePct', v:[.03,.1], rar:1 },
     { name:'of Power', stat:'dmgPct', v:[.08,.25], rar:2 }, { name:'of the Leech', stat:'lifeLeech', v:[.03,.08], rar:2 },
     { name:'of the Whale', stat:'hpPct', v:[.1,.3], rar:3 }, { name:'of the Zodiac', stat:'allAttr', v:[2,6], rar:3 },
     { name:'of Greed', stat:'goldFind', v:[.15,.5], rar:2 }, { name:'of Fortune', stat:'magicFind', v:[.1,.35], rar:2 },
+    { name:'of the Bulwark', stat:'resAll', v:[.05,.15], rar:3 },
+    { name:'of the Duelist', stat:'addDmg', v:[.06,.2], rar:3 },
   ];
   const UNIQUES = [
     { name:'Soul of the Red-Eye', slot:'weapon', dmg:[30,45], affixes:[{stat:'dmgPct',v:.4},{stat:'fireDmg',v:20},{stat:'lifeLeech',v:.06}] },
@@ -120,6 +125,9 @@ const RPG = (() => {
     { name:'Melbu Frahma\'s Crown', slot:'helm', def:18, affixes:[{stat:'allAttr',v:5},{stat:'hpPct',v:.2}] },
     { name:'Emperor\'s Plate', slot:'armor', def:34, affixes:[{stat:'defPct',v:.25},{stat:'hpFlat',v:60}] },
     { name:'Wingly Tears', slot:'ring', affixes:[{stat:'magicFind',v:.4},{stat:'eneFlat',v:10},{stat:'critPct',v:.08}] },
+    { name:'Stormcaller\'s Ward', slot:'armor', def:30, affixes:[{stat:'resLightning',v:.5},{stat:'resIce',v:.25},{stat:'hpFlat',v:45}] },
+    { name:'Coreheart Signet', slot:'ring', affixes:[{stat:'resFire',v:.4},{stat:'resArcane',v:.2},{stat:'fireDmg',v:14}] },
+    { name:'The Sixth Beat', slot:'amulet', affixes:[{stat:'addDmg',v:.35},{stat:'dexFlat',v:8},{stat:'spdPct',v:.1}] },
   ];
   const RARITY = [
     { key:'normal', w:55, affixes:0 }, { key:'magic', w:28, affixes:[1,2] },
@@ -141,6 +149,7 @@ const RPG = (() => {
       skills: {}, gold: 50, potions: { hp: 3, mp: 2 },
       equip: { weapon:null, armor:null, helm:null, boots:null, amulet:null, ring1:null, ring2:null, charm:null },
       inventory: [], spirit: 0, dragoonForm: false,
+      additions: {}, addition: Combat.additionsFor(clsKey)[0].id,
       buffs: {}, cheatDeathUsed: false, kills: 0,
       serah: { hp: 0, mp: 0, weapon: null },
       kael: { hp: 0, mp: 0, weapon: null },
@@ -240,12 +249,17 @@ const RPG = (() => {
   function recalc() {
     const a = player.attr, eq = player.equip;
     const flat = { str:0, dex:0, vit:0, ene:0, hpFlat:0, mpFlat:0, defFlat:0, dmgFlat:0, fireDmg:0, iceDmg:0, ltnDmg:0 };
-    const pct = { dmg:0, def:0, hp:0, mp:0, crit:0, dodge:0, spd:0, gold:0, mf:0, allAttr:0, lifeLeech:0 };
+    const pct = { dmg:0, def:0, hp:0, mp:0, crit:0, dodge:0, spd:0, gold:0, mf:0, allAttr:0, lifeLeech:0, addDmg:0 };
+    const res = { fire:0, ice:0, lightning:0, arcane:0 };
+    const RES_STAT = { resFire:'fire', resIce:'ice', resLightning:'lightning', resArcane:'arcane' };
     for (const slot of Object.values(eq)) {
       if (!slot) continue;
       for (const af of slot.affixes || []) {
         const map = { strFlat:'str', dexFlat:'dex', vitFlat:'vit', eneFlat:'ene' };
-        if (map[af.stat]) flat[map[af.stat]] += af.v;
+        if (RES_STAT[af.stat]) res[RES_STAT[af.stat]] += af.v;
+        else if (af.stat==='resAll') for (const k of Object.keys(res)) res[k] += af.v;
+        else if (af.stat==='addDmg') pct.addDmg += af.v;
+        else if (map[af.stat]) flat[map[af.stat]] += af.v;
         else if (af.stat==='allAttr') pct.allAttr += af.v;
         else if (af.stat in flat) flat[af.stat] += af.v;
         else if (af.stat==='dmgPct') pct.dmg += af.v;
@@ -289,6 +303,13 @@ const RPG = (() => {
     player.spellPower = 1 + S.ene*0.02 + passiveMpPct*.67;
     player.goldFind = pct.gold + passiveGold; player.magicFind = pct.mf;
     player.lifeLeech = pct.lifeLeech;
+    // elemental wards (capped) + Addition-only damage bonus
+    const cap = typeof Combat !== 'undefined' ? Combat.RES_CAP : .75;
+    player.resist = {
+      fire: Math.min(cap, res.fire), ice: Math.min(cap, res.ice),
+      lightning: Math.min(cap, res.lightning), arcane: Math.min(cap, res.arcane),
+    };
+    player.additionBonus = pct.addDmg;
     if (player.hp !== undefined) player.hp = Math.min(player.hp, player.maxHp);
     if (player.mp !== undefined) player.mp = Math.min(player.mp, player.maxMp);
     if (player.serah) {
@@ -384,6 +405,30 @@ const RPG = (() => {
 
   function gainGold(amount){ const g = Math.round(amount*(1+player.goldFind)); player.gold += g; return g; }
 
+  // ---------- ADDITION MASTERY ----------
+  // Additions level from use, not from skill points. Returns the new mastery level
+  // when a chain pushed it over a threshold, else 0.
+  function additionUses(id){ return (player.additions && player.additions[id]) || 0; }
+  function additionLevel(id){ return Combat.masteryLevel(additionUses(id)); }
+  function logAdditionUse(id) {
+    if (!player.additions) player.additions = {};
+    const before = Combat.masteryLevel(player.additions[id] || 0);
+    player.additions[id] = (player.additions[id] || 0) + 1;
+    const after = Combat.masteryLevel(player.additions[id]);
+    return after > before ? after : 0;
+  }
+  function currentAddition() {
+    return Combat.activeAddition(player.cls, player.level, player.addition);
+  }
+  function setAddition(id) {
+    if (Combat.unlockedAdditions(player.cls, player.level).some(a => a.id === id)) { player.addition = id; return true; }
+    return false;
+  }
+  // Additions the player has earned but never thrown — used to nudge them once on level-up.
+  function newlyUnlockedAdditions(prevLevel) {
+    return Combat.additionsFor(player.cls).filter(a => a.req > prevLevel && a.req <= player.level);
+  }
+
   // ---------- SAVE / LOAD ----------
   function save() {
     try { localStorage.setItem('dfs_save', JSON.stringify(player)); return true; } catch(e){ return false; }
@@ -396,6 +441,8 @@ const RPG = (() => {
       if (!player.lyra) player.lyra = { hp: 0, mp: 0, weapon: null };
       if (!player.kael) player.kael = { hp: 0, mp: 0, weapon: null };
       if (!player.serah) player.serah = { hp: 0, mp: 0, weapon: null };
+      if (!player.additions) player.additions = {};
+      if (!player.addition) player.addition = Combat.additionsFor(player.cls)[0].id;
       recalc(); return true;
     } catch(e){ return false; }
   }
@@ -403,5 +450,6 @@ const RPG = (() => {
 
   return { CLASSES, BASES, newPlayer, recalc, genItem, gainXp, gainGold, skillRank, getSkill,
            save, load, hasSave, serahStats, SERAH_SKILLS, kaelStats, KAEL_SKILLS, lyraStats, LYRA_SKILLS,
+           additionUses, additionLevel, logAdditionUse, currentAddition, setAddition, newlyUnlockedAdditions,
            get player(){ return player; }, set player(p){ player = p; } };
 })();

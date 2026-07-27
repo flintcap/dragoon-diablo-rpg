@@ -93,24 +93,30 @@
   <div id="turn-indicator"></div>
   <div id="party-frames">
     <div class="pf-title">PARTY</div>
+    <div id="leader-row"><span class="leader-label">YOU</span><span class="ail-strip" id="player-ail"></span></div>
     <div id="serah-bars" class="hidden">
       <span class="serah-label">SERAH</span>
       <div class="bar serah-hp-bar"><div id="serah-hp"></div></div>
       <div class="bar serah-mp-bar"><div id="serah-mp"></div></div>
+      <span class="ail-strip" id="serah-ail"></span>
     </div>
     <div id="kael-bars" class="hidden">
       <span class="kael-label">KAEL</span>
       <div class="bar kael-hp-bar"><div id="kael-hp"></div></div>
       <div class="bar kael-mp-bar"><div id="kael-mp"></div></div>
+      <span class="ail-strip" id="kael-ail"></span>
     </div>
     <div id="lyra-bars" class="hidden">
       <span class="lyra-label">LYRA</span>
       <div class="bar lyra-hp-bar"><div id="lyra-hp"></div></div>
       <div class="bar lyra-mp-bar"><div id="lyra-mp"></div></div>
+      <span class="ail-strip" id="lyra-ail"></span>
     </div>
   </div>
+  <div id="enemy-status" class="hidden"></div>
   <div id="vignette"></div>
   <div id="boss-bar" class="hidden"><div id="boss-name"></div><div id="boss-track"><div id="boss-fill"></div></div></div>
+  <div id="addition-name" class="hidden"></div>
   <div id="addition-ring" class="hidden">
     <div id="ring-outer"></div>
     <div id="ring-shrink"></div>
@@ -152,6 +158,10 @@
         <div id="derived-list"></div>
       </div>
     </div>
+    <h3 class="sheet-sub">Elemental Resistance</h3>
+    <div id="resist-list"></div>
+    <h3 class="sheet-sub">Addition Mastery <small>— chains level from use, not skill points</small></h3>
+    <div id="addition-list"></div>
   </div>
 </div>
 
@@ -226,6 +236,7 @@
 <script src="js/three.min.js"></script>
 <script src="js/textures.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/combat.js"></script>
 <script src="js/rpg.js"></script>
 <script src="js/game.js"></script>
 <script src="js/battle.js"></script>

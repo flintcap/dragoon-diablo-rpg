@@ -237,7 +237,15 @@ const Main = (() => {
 
   function applyRewards(r) {
     const p = RPG.player;
-    if (r.xp) { const ups = RPG.gainXp(r.xp); if (ups) { AudioSys.play('levelup'); toast(`★ LEVEL UP! Now level ${p.level}`); } }
+    if (r.xp) {
+      const prevLevel = p.level;
+      const ups = RPG.gainXp(r.xp);
+      if (ups) {
+        AudioSys.play('levelup'); toast(`★ LEVEL UP! Now level ${p.level}`);
+        for (const a of RPG.newlyUnlockedAdditions(prevLevel))
+          toast(`🌀 New Addition: <b>${a.icon} ${a.name}</b> — ${a.beats} beats.<br><small>Pick it in battle under <b>Additions</b>.</small>`, 'var(--lod-ice)');
+      }
+    }
     if (r.gold) { const g = RPG.gainGold(r.gold); }
     if (r.spirit) p.spirit = Math.min(100, p.spirit + r.spirit);
     if (r.potions) { p.potions.hp += r.potions; p.potions.mp += r.potions; }
@@ -519,8 +527,39 @@ const Main = (() => {
       ['Spell Power', (p.spellPower*100).toFixed(0)+'%'],
       ['Magic Find', (p.magicFind*100).toFixed(0)+'%'], ['Gold Find', (p.goldFind*100).toFixed(0)+'%'],
       ['Life Leech', (p.lifeLeech*100).toFixed(0)+'%'],
+      ['Addition Damage', '+'+((p.additionBonus||0)*100).toFixed(0)+'%'],
     ];
     ui('derived-list').innerHTML = d.map(([k,v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
+    renderResists(); renderAdditionMastery();
+  }
+  /* Resistances read as a row of schools so you can see at a glance which zone will hurt. */
+  function renderResists() {
+    const p = RPG.player, el = ui('resist-list'); if (!el) return;
+    const r = p.resist || { fire:0, ice:0, lightning:0, arcane:0 };
+    el.innerHTML = ['fire','ice','lightning','arcane'].map(k => {
+      const v = Math.round((r[k]||0)*100);
+      const E = Combat.ELEMENTS[k];
+      return `<div class="res-cell" title="${E.name} resistance — caps at ${Math.round(Combat.RES_CAP*100)}%">
+        <span style="color:${E.color}">${E.icon}</span>
+        <b class="${v>0?'res-on':''}">${v}%</b></div>`;
+    }).join('');
+  }
+  /* Additions level from use — showing the counter is what makes players chase it. */
+  function renderAdditionMastery() {
+    const p = RPG.player, el = ui('addition-list'); if (!el) return;
+    el.innerHTML = Combat.additionsFor(p.cls).map(a => {
+      const locked = p.level < a.req;
+      const uses = RPG.additionUses(a.id), lv = Combat.masteryLevel(uses), next = Combat.masteryNext(uses);
+      const pctTo = next ? Math.min(100, Math.round(uses / next * 100)) : 100;
+      const active = a.id === RPG.currentAddition().id;
+      return `<div class="add-row${active?' active':''}${locked?' locked':''}">
+        <span class="add-icon">${a.icon}</span>
+        <span class="add-name">${a.name}<small>${locked ? `unlocks at level ${a.req}`
+          : `${a.beats} beats · ×${a.mult.toFixed(2)}${a.finisher ? ` · ${Combat.ELEMENTS[a.finisher.element].icon} finisher` : ''}`}</small></span>
+        <span class="add-mastery">${locked ? '🔒' : `Lv ${lv}<i>${next ? `${uses}/${next}` : 'MAX'}</i>`}</span>
+        <span class="add-track"><span class="add-fill" style="width:${locked?0:pctTo}%"></span></span>
+      </div>`;
+    }).join('');
   }
 
   function renderSkillTree() {
@@ -565,7 +604,9 @@ const Main = (() => {
     hpFlat:'HP', hpPct:'% HP', mpFlat:'MP', mpPct:'% MP', critPct:'% crit', dodgePct:'% dodge',
     spdPct:'% speed', strFlat:'STR', dexFlat:'DEX', vitFlat:'VIT', eneFlat:'ENE', allAttr:'all attributes',
     fireDmg:'fire dmg', iceDmg:'ice dmg', ltnDmg:'lightning dmg', lifeLeech:'% life leech',
-    goldFind:'% gold find', magicFind:'% magic find' };
+    goldFind:'% gold find', magicFind:'% magic find',
+    resFire:'% fire resist', resIce:'% ice resist', resLightning:'% lightning resist',
+    resArcane:'% arcane resist', resAll:'% all resistances', addDmg:'% Addition damage' };
   function affixText(a) {
     const pct = typeof a.v === 'number' && a.v < 1 && a.v > -1 && !String(a.v).includes('e');
     const val = pct ? Math.round(a.v*100) : a.v;

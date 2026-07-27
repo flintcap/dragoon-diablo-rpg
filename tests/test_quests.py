@@ -18,13 +18,15 @@ async def buff(page, s):
     await page.evaluate(f"() => {{ const p = RPG.player; p.attr.str = {s}; p.attr.vit = 200; RPG.recalc(); p.hp = p.maxHp; p.spirit = 100; }}")
 
 async def attack_round(page):
+    # the battle menu is rebuilt per actor, so the buttons carry no stable data-action —
+    # the acting character's Addition is always the first button
     try:
-        await page.click('#battle-menu .battle-btn[data-action="attack"]', timeout=3000)
+        await page.click('#battle-menu .battle-btn >> nth=0', timeout=3000)
     except Exception:
         await page.wait_for_timeout(1500); return
-    for i in range(6):
-        await page.wait_for_timeout(900); await page.keyboard.press('Space')
-    await page.wait_for_timeout(2500)
+    for i in range(12):
+        await page.keyboard.press('Space'); await page.wait_for_timeout(320)
+    await page.wait_for_timeout(2600)
 
 async def ensure_world(page, max_rounds=12):
     """Fight out of any battle (incl. ambushes) until back in world state."""
