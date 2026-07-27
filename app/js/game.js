@@ -1711,6 +1711,272 @@ const World = (() => {
     for (const cfg of PORTAL_DEFS[zoneId] || []) buildOnePortal(cfg);
   }
 
+  // ============================================================
+  //  GEAR VISUALS — the character *is* the loot they are wearing
+  // ============================================================
+  /* Rarity drives metal, trim and glow. Normal gear is plain iron; magic runs cold blue
+     steel; rare is gilded; unique is fire-blackened bronze that emits its own light. */
+  const RARITY_KIT = {
+    normal: { metal:0x6a707c, trim:0x4c525c, cloth:0x413c31, glow:0x000000, glowI:0 },
+    magic:  { metal:0x4b6ba8, trim:0x2a3f68, cloth:0x243052, glow:0x2a5cc8, glowI:.10 },
+    rare:   { metal:0xa88c3c, trim:0x6b5518, cloth:0x473a16, glow:0xd4af37, glowI:.14 },
+    unique: { metal:0x8a5220, trim:0x4e280c, cloth:0x3c1d09, glow:0xff8a2a, glowI:.22 },
+  };
+  const kitOf = it => RARITY_KIT[(it && it.rarity) || 'normal'] || RARITY_KIT.normal;
+  /* A fresh material per piece, so tint and glow are per-item rather than shared. */
+  function gearMat(kit, kind) {
+    const m = kind === 'cloth' ? mat(kit.cloth, .92, .03) : mat(kit.metal, .38, .82);
+    m.emissive = new M.Color(kit.glow);
+    m.emissiveIntensity = kit.glowI * (kind === 'cloth' ? .5 : 1);
+    if (typeof TexFactory !== 'undefined')
+      TexFactory.applyNormal(m, kind === 'cloth' ? 'cloth' : 'metal',
+        kind === 'cloth' ? 3 : 2.4, 3, kind === 'cloth' ? 1 : .9);
+    return m;
+  }
+
+  /* ---- ARMOUR: five bases, five genuinely different silhouettes ---- */
+  const ARMOR_BUILD = {
+    'Cloth Garb': (kit, s) => {
+      const g = new M.Group();
+      const robe = new M.Mesh(new M.CylinderGeometry(.43*s, .52*s, 1.0*s, 10, 1, true), gearMat(kit, 'cloth'));
+      robe.material.side = M.DoubleSide;
+      robe.position.y = 1.22*s; robe.castShadow = true; g.add(robe);
+      const sash = new M.Mesh(new M.PlaneGeometry(.2*s, .8*s), gearMat(kit, 'cloth'));
+      sash.material.side = M.DoubleSide;
+      sash.position.set(.14*s, 1.15*s, .43*s); sash.rotation.z = .1; g.add(sash);
+      return g;
+    },
+    'Leather Armor': (kit, s) => {
+      const g = new M.Group();
+      const jerkin = new M.Mesh(new M.CylinderGeometry(.415*s, .33*s, .68*s, 10), gearMat(kit, 'cloth'));
+      jerkin.position.y = 1.36*s; jerkin.castShadow = true; g.add(jerkin);
+      for (const side of [-1, 1]) {                       // shoulder straps
+        const strap = new M.Mesh(new M.BoxGeometry(.1*s, .5*s, .05*s), gearMat(kit, 'cloth'));
+        strap.position.set(side*.2*s, 1.45*s, .4*s); strap.rotation.z = side*.24; g.add(strap);
+      }
+      const studs = new M.Mesh(new M.TorusGeometry(.42*s, .035*s, 5, 14), gearMat(kit, 'metal'));
+      studs.rotation.x = Math.PI/2; studs.position.y = 1.14*s; g.add(studs);
+      return g;
+    },
+    'Chain Mail': (kit, s) => {
+      const g = new M.Group();
+      // a fine normal-map repeat is what makes this read as links rather than plate
+      const mailMat = gearMat(kit, 'metal');
+      if (typeof TexFactory !== 'undefined') TexFactory.applyNormal(mailMat, 'metal', 9, 11, 1.4);
+      mailMat.roughness = .62;
+      const haub = new M.Mesh(new M.CylinderGeometry(.425*s, .375*s, .78*s, 12), mailMat);
+      haub.position.y = 1.38*s; haub.castShadow = true; g.add(haub);
+      const skirt = new M.Mesh(new M.CylinderGeometry(.40*s, .49*s, .34*s, 12, 1, true), mailMat);
+      skirt.material.side = M.DoubleSide;
+      skirt.position.y = .92*s; g.add(skirt);
+      const coif = new M.Mesh(new M.SphereGeometry(.27*s, 12, 9, 0, Math.PI*2, 0, Math.PI*.62), mailMat);
+      coif.position.y = 1.96*s; g.add(coif);              // mail hood under any helm
+      return g;
+    },
+    'Plate Armor': (kit, s) => {
+      const g = new M.Group();
+      const cuirass = new M.Mesh(new M.CylinderGeometry(.435*s, .325*s, .66*s, 12), gearMat(kit, 'metal'));
+      cuirass.position.y = 1.38*s; cuirass.castShadow = true; g.add(cuirass);
+      const ridge = new M.Mesh(new M.BoxGeometry(.07*s, .6*s, .12*s), gearMat(kit, 'metal'));
+      ridge.position.set(0, 1.38*s, .44*s); g.add(ridge);   // the keel down the breastplate
+      for (let f = 0; f < 3; f++) {                         // fauld: overlapping waist plates
+        const lame = new M.Mesh(new M.CylinderGeometry((.40 + f*.03)*s, (.43 + f*.03)*s, .12*s, 12), gearMat(kit, 'metal'));
+        lame.position.y = (1.02 - f*.11)*s; g.add(lame);
+      }
+      for (const side of [-1, 1]) {
+        const paul = new M.Mesh(new M.SphereGeometry(.195*s, 12, 8, 0, Math.PI*2, 0, Math.PI*.5), gearMat(kit, 'metal'));
+        paul.position.set(side*.47*s, 1.70*s, 0); paul.rotation.z = side*.3; paul.castShadow = true; g.add(paul);
+      }
+      return g;
+    },
+    'Starforged Mail': (kit, s) => {
+      const g = new M.Group();
+      const cuirass = new M.Mesh(new M.CylinderGeometry(.445*s, .33*s, .68*s, 14), gearMat(kit, 'metal'));
+      cuirass.position.y = 1.39*s; cuirass.castShadow = true; g.add(cuirass);
+      for (let f = 0; f < 3; f++) {
+        const lame = new M.Mesh(new M.CylinderGeometry((.40 + f*.03)*s, (.44 + f*.03)*s, .12*s, 14), gearMat(kit, 'metal'));
+        lame.position.y = (1.02 - f*.11)*s; g.add(lame);
+      }
+      for (const side of [-1, 1]) {                         // swept pauldrons with a blade each
+        const paul = new M.Mesh(new M.SphereGeometry(.205*s, 12, 8, 0, Math.PI*2, 0, Math.PI*.46), gearMat(kit, 'metal'));
+        paul.position.set(side*.48*s, 1.72*s, 0); paul.rotation.z = side*.34; paul.castShadow = true; g.add(paul);
+        const fin = new M.Mesh(new M.ConeGeometry(.09*s, .5*s, 4), gearMat(kit, 'metal'));
+        fin.position.set(side*.54*s, 1.95*s, -.06*s); fin.rotation.set(-.35, 0, side*.5); g.add(fin);
+      }
+      const core = new M.Mesh(new M.OctahedronGeometry(.11*s, 0), mat(0xd88a45, .15, .35, 0xff7a2a, 1.1));
+      core.position.set(0, 1.48*s, .45*s); g.add(core);     // the Starheart set in the breastplate
+      const halo = new M.PointLight(0xff8a3a, .35, 3.2); halo.position.set(0, 1.5*s, .5*s); g.add(halo);
+      return g;
+    },
+  };
+
+  /* ---- HELMS ---- */
+  const HELM_BUILD = {
+    'Cap': (kit, s) => {
+      const g = new M.Group();
+      const cap = new M.Mesh(new M.SphereGeometry(.27*s, 12, 9, 0, Math.PI*2, 0, Math.PI*.5), gearMat(kit, 'cloth'));
+      cap.position.y = 2.0*s; g.add(cap);
+      const band = new M.Mesh(new M.TorusGeometry(.265*s, .028*s, 5, 14), gearMat(kit, 'cloth'));
+      band.rotation.x = Math.PI/2; band.position.y = 1.99*s; g.add(band);
+      return g;
+    },
+    'Great Helm': (kit, s) => {
+      const g = new M.Group();
+      const barrel = new M.Mesh(new M.CylinderGeometry(.27*s, .29*s, .46*s, 12), gearMat(kit, 'metal'));
+      barrel.position.y = 2.0*s; barrel.castShadow = true; g.add(barrel);
+      const top = new M.Mesh(new M.SphereGeometry(.27*s, 12, 8, 0, Math.PI*2, 0, Math.PI*.5), gearMat(kit, 'metal'));
+      top.position.y = 2.22*s; g.add(top);
+      const slit = new M.Mesh(new M.BoxGeometry(.34*s, .045*s, .06*s), mat(0x08090c, .95));
+      slit.position.set(0, 2.06*s, .26*s); g.add(slit);      // the visor slit
+      const cross = new M.Mesh(new M.BoxGeometry(.05*s, .34*s, .05*s), gearMat(kit, 'metal'));
+      cross.position.set(0, 1.98*s, .27*s); g.add(cross);
+      return g;
+    },
+    'Starforged Helm': (kit, s) => {
+      const g = new M.Group();
+      const dome = new M.Mesh(new M.SphereGeometry(.275*s, 14, 10, 0, Math.PI*2, 0, Math.PI*.54), gearMat(kit, 'metal'));
+      dome.position.y = 2.0*s; dome.castShadow = true; g.add(dome);
+      const slit = new M.Mesh(new M.BoxGeometry(.3*s, .04*s, .06*s), mat(0x08090c, .95));
+      slit.position.set(0, 2.0*s, .25*s); g.add(slit);
+      for (const side of [-1, 1]) {                          // the wings that name it
+        const wing = new M.Mesh(new M.ConeGeometry(.075*s, .58*s, 4), gearMat(kit, 'metal'));
+        wing.position.set(side*.26*s, 2.16*s, -.04*s);
+        wing.rotation.set(-.2, 0, side*.95); wing.castShadow = true; g.add(wing);
+        const wing2 = new M.Mesh(new M.ConeGeometry(.055*s, .42*s, 4), gearMat(kit, 'metal'));
+        wing2.position.set(side*.29*s, 2.05*s, -.06*s); wing2.rotation.set(-.2, 0, side*1.25); g.add(wing2);
+      }
+      const gem = new M.Mesh(new M.OctahedronGeometry(.07*s, 0), mat(0xd88a45, .15, .35, 0xff7a2a, 1.0));
+      gem.position.set(0, 2.17*s, .2*s); g.add(gem);
+      return g;
+    },
+    // plain 'Helm' is matched last, since 'Great Helm' and 'Starforged Helm' contain the word
+    'Helm': (kit, s) => {
+      const g = new M.Group();
+      const dome = new M.Mesh(new M.SphereGeometry(.275*s, 14, 10, 0, Math.PI*2, 0, Math.PI*.56), gearMat(kit, 'metal'));
+      dome.position.y = 1.99*s; dome.castShadow = true; g.add(dome);
+      const nasal = new M.Mesh(new M.BoxGeometry(.055*s, .3*s, .05*s), gearMat(kit, 'metal'));
+      nasal.position.set(0, 1.94*s, .25*s); g.add(nasal);    // nose guard
+      const rim = new M.Mesh(new M.TorusGeometry(.275*s, .032*s, 6, 16), gearMat(kit, 'metal'));
+      rim.rotation.x = Math.PI/2; rim.position.y = 1.97*s; g.add(rim);
+      return g;
+    },
+  };
+
+  /* ---- BOOTS (attached to each lower leg, so they stride with it) ---- */
+  const BOOT_BUILD = {
+    'Greaves': (kit, s) => {
+      const g = new M.Group();
+      const shin = new M.Mesh(new M.CylinderGeometry(.115*s, .1*s, .34*s, 8, 1, true), gearMat(kit, 'metal'));
+      shin.material.side = M.DoubleSide;
+      shin.position.y = -.24*s; shin.castShadow = true; g.add(shin);
+      const knee = new M.Mesh(new M.SphereGeometry(.115*s, 9, 7, 0, Math.PI*2, 0, Math.PI*.55), gearMat(kit, 'metal'));
+      knee.position.y = -.04*s; g.add(knee);               // knee cop
+      return g;
+    },
+    'Winged Boots': (kit, s, side) => {
+      const g = new M.Group();
+      const shin = new M.Mesh(new M.CylinderGeometry(.12*s, .1*s, .36*s, 9, 1, true), gearMat(kit, 'metal'));
+      shin.material.side = M.DoubleSide;
+      shin.position.y = -.24*s; shin.castShadow = true; g.add(shin);
+      const knee = new M.Mesh(new M.SphereGeometry(.12*s, 9, 7, 0, Math.PI*2, 0, Math.PI*.55), gearMat(kit, 'metal'));
+      knee.position.y = -.03*s; g.add(knee);
+      for (const d of [-1, 1]) {                            // ankle wings
+        const w = new M.Mesh(new M.ConeGeometry(.045*s, .26*s, 4), gearMat(kit, 'metal'));
+        w.position.set(side*.1*s, -.4*s, d*.05*s);
+        w.rotation.set(d*.3, 0, side*1.3); g.add(w);
+      }
+      return g;
+    },
+    'Boots': (kit, s) => {
+      const g = new M.Group();
+      const cuff = new M.Mesh(new M.CylinderGeometry(.118*s, .1*s, .2*s, 8), gearMat(kit, 'cloth'));
+      cuff.position.y = -.3*s; g.add(cuff);
+      return g;
+    },
+  };
+
+  function applyGearVisuals(rig, equip, scale = 1) {
+    if (!rig || !rig.refs) return;
+    const R = rig.refs, s = scale;
+    for (const o of R.gear || []) { if (o.parent) o.parent.remove(o); }
+    R.gear = [];
+    const attach = (obj, parent) => { (parent || rig.body).add(obj); R.gear.push(obj); };
+    const pick = (table, name, fallback) => {
+      if (name) for (const key of Object.keys(table)) if (name.includes(key)) return table[key];
+      return table[fallback];
+    };
+
+    // weapon always reflects what is held
+    if (R.sword && R.sword.parent) R.sword.parent.remove(R.sword);
+    const wpn = buildWeaponMesh(currentWeaponType());
+    wpn.scale.setScalar(s);
+    wpn.position.set(.56*s, 1.28*s, .05*s); wpn.rotation.z = -.4;
+    rig.body.add(wpn); R.sword = wpn;
+
+    // armour
+    const armor = equip.armor;
+    if (armor) {
+      const build = pick(ARMOR_BUILD, armor.name, 'Leather Armor');
+      attach(build(kitOf(armor), s));
+      if (armor.def >= 8) {                                // heavy kit carries a shield
+        const sh = buildShieldMesh(armor.rarity);
+        sh.scale.setScalar(s); sh.position.set(-.6*s, 1.32*s, .1*s);
+        attach(sh);
+      }
+    }
+    // helm — hides the hair underneath
+    const helm = equip.helm;
+    if (R.classHelm) R.classHelm.visible = !helm;
+    if (helm) attach(pick(HELM_BUILD, helm.name, 'Cap')(kitOf(helm), s));
+    // boots, attached to each lower leg so they move with the stride
+    const boots = equip.boots;
+    if (boots) {
+      const build = pick(BOOT_BUILD, boots.name, 'Boots');
+      for (const [side, holder] of [[-1, rig.legL], [1, rig.legR]]) {
+        const lower = holder && holder.userData && holder.userData.lower;
+        if (lower) attach(build(kitOf(boots), s, side), lower);
+      }
+    }
+    // amulet at the collar
+    const amu = equip.amulet;
+    if (amu) {
+      const kit = kitOf(amu);
+      const chain = new M.Mesh(new M.TorusGeometry(.16*s, .012*s, 4, 14), gearMat(kit, 'metal'));
+      chain.rotation.x = 1.25; chain.position.set(0, 1.66*s, .12*s); attach(chain);
+      const gem = new M.Mesh(new M.OctahedronGeometry(.075*s, 0),
+        mat(kit.metal, .12, .5, kit.glow || kit.metal, 1.8));
+      gem.position.set(0, 1.52*s, .3*s); attach(gem);
+    }
+    // rings catch the light on the weapon hand
+    for (const slot of ['ring1', 'ring2']) {
+      const r = equip[slot]; if (!r || !R.handR) continue;
+      const kit = kitOf(r);
+      const band = new M.Mesh(new M.TorusGeometry(.05*s, .014*s, 4, 10), gearMat(kit, 'metal'));
+      band.rotation.x = Math.PI/2;
+      band.position.set(slot === 'ring1' ? .03*s : -.03*s, 0, 0);
+      attach(band, R.handR);
+    }
+    // a unique anywhere in the kit lights the ground under you
+    const hasUnique = Object.values(equip).some(it => it && it.rarity === 'unique');
+    if (hasUnique) {
+      const ring = new M.Mesh(new M.TorusGeometry(.58*s, .035*s, 8, 32),
+        new M.MeshBasicMaterial({ color: 0xff9a3a, transparent:true, opacity:.5,
+          blending:M.AdditiveBlending, depthWrite:false }));
+      ring.rotation.x = Math.PI/2; ring.position.y = .12*s;
+      rig.group.add(ring); R.gear.push(ring); R.uniqueAura = ring;
+      const ul = new M.PointLight(0xff9a3a, .55, 6*s); ul.position.y = .9*s;
+      rig.group.add(ul); R.gear.push(ul); R.uniqueLight = ul;
+    } else { R.uniqueAura = null; R.uniqueLight = null; }
+    // the old refs the rest of the engine still reads
+    R.shield = R.gear.find(o => o.userData && o.userData.isShield) || null;
+    R.helmMesh = helm ? R.gear[R.gear.length - 1] : null;
+  }
+
+  function refreshPlayerGear() {
+    if (!player3d || !player3d.refs || !RPG.player) return;
+    applyGearVisuals(player3d, RPG.player.equip, 1);
+  }
+
   // ---------- CHARACTERS ----------
   // distinct silhouette rigs per enemy kind
   function buildWolf(color, scale) {
@@ -1860,166 +2126,133 @@ const World = (() => {
     return g;
   }
 
-  // refresh the on-character weapon + armor tints after gear changes
-  function refreshPlayerGear() {
-    if (!player3d || !player3d.refs) return;
-    if (player3d.refs.sword) player3d.body.remove(player3d.refs.sword);
-    const sword = buildWeaponMesh(currentWeaponType());
-    sword.position.set(.6, 1.15, 0); sword.rotation.z = -.4;
-    player3d.body.add(sword);
-    player3d.refs.sword = sword;
-    // shield when real armor is worn
-    if (player3d.refs.shield) { player3d.body.remove(player3d.refs.shield); player3d.refs.shield = null; }
-    const armorIt = RPG.player.equip.armor;
-    if (armorIt && armorIt.def >= 8) {
-      const sh = buildShieldMesh(armorIt.rarity);
-      sh.position.set(-.62, 1.15, .1);
-      player3d.body.add(sh);
-      player3d.refs.shield = sh;
-    }
-    // pauldrons recolor + grow with the equipped armor's rarity and weight
-    const pcol = { normal:0x8a90a0, magic:0x3a6ad4, rare:0xd4af37, unique:0xb45a1a };
-    if (!player3d.refs.pauldrons) player3d.refs.pauldrons = [];
-    if (armorIt) {
-      const target = .9 + (armorIt.def||4)/36;
-      const col = pcol[armorIt.rarity] || 0x8a90a0;
-      if (!player3d.refs.pauldrons.length) {
-        for (const side of [-1,1]) {
-          const paul = new M.Mesh(new M.SphereGeometry(.18, 8, 6, 0, Math.PI*2, 0, Math.PI/2), mat(col, .4, .8));
-          paul.position.set(side*.48, 1.52, 0);
-          player3d.body.add(paul);
-          player3d.refs.pauldrons.push(paul);
-        }
-      }
-      for (const paul of player3d.refs.pauldrons) {
-        paul.material.color.setHex(col);
-        paul.scale.setScalar(target);
-      }
-    }
-    // tiered helm replaces the class cone when a helm is equipped
-    if (player3d.refs.helmMesh) { player3d.body.remove(player3d.refs.helmMesh); player3d.refs.helmMesh = null; }
-    if (player3d.refs.classHelm) player3d.refs.classHelm.visible = true;
-    const helmIt = RPG.player.equip.helm;
-    if (helmIt) {
-      const hm = buildHelmMesh(helmIt.name, helmIt.rarity);
-      player3d.body.add(hm);
-      player3d.refs.helmMesh = hm;
-      if (player3d.refs.classHelm) player3d.refs.classHelm.visible = false;
-    }
-    // boots tint on legs
-    const bootsIt = RPG.player.equip.boots;
-    if (player3d.refs.legMat) {
-      player3d.refs.legMat.color.setHex(bootsIt ? ({ normal:0x2a2f3a, magic:0x24406a, rare:0x5a4a1a, unique:0x4a2408 }[bootsIt.rarity] || 0x2a2f3a) : 0x2a2f3a);
-    }
-    // shin guards when boots are equipped
-    if (player3d.refs.shins) { for (const s of player3d.refs.shins) player3d.body.remove(s); player3d.refs.shins = null; }
-    if (bootsIt) {
-      const col = pcol[bootsIt.rarity] || 0x8a90a0;
-      player3d.refs.shins = [];
-      for (const side of [-1,1]) {
-        const shin = new M.Mesh(new M.BoxGeometry(.16, .3, .16), mat(col, .45, .75));
-        shin.position.set(side*.18, .55, .06);
-        player3d.body.add(shin);
-        player3d.refs.shins.push(shin);
-      }
-    }
-    // amulet gem glowing at the collar
-    if (player3d.refs.amuletMesh) { player3d.body.remove(player3d.refs.amuletMesh); player3d.refs.amuletMesh = null; }
-    const amuIt = RPG.player.equip.amulet;
-    if (amuIt) {
-      const col = { normal:0xc8c8c8, magic:0x6b8cff, rare:0xffe14d, unique:0xd08028 }[amuIt.rarity];
-      const gem = new M.Mesh(new M.OctahedronGeometry(.09, 0), mat(col, .2, .4, col, 1.4));
-      gem.position.set(0, 1.42, .3);
-      player3d.body.add(gem);
-      player3d.refs.amuletMesh = gem;
-    }
-    // unique aura: golden ring + faint light when any equipped item is unique
-    if (player3d.refs.uniqueAura) { player3d.group.remove(player3d.refs.uniqueAura); player3d.refs.uniqueAura = null; }
-    if (player3d.refs.uniqueLight) { player3d.group.remove(player3d.refs.uniqueLight); player3d.refs.uniqueLight = null; }
-    const hasUnique = Object.values(RPG.player.equip).some(it => it && it.rarity === 'unique');
-    if (hasUnique) {
-      const ring = new M.Mesh(new M.TorusGeometry(.55, .035, 8, 32),
-        new M.MeshBasicMaterial({ color: 0xd08028, transparent:true, opacity:.8, blending:M.AdditiveBlending, depthWrite:false }));
-      ring.rotation.x = Math.PI/2; ring.position.y = .12;
-      player3d.group.add(ring);
-      player3d.refs.uniqueAura = ring;
-      const ul = new M.PointLight(0xd08028, .9, 6); ul.position.y = .8;
-      player3d.group.add(ul);
-      player3d.refs.uniqueLight = ul;
-    }
-    // armor/helm rarity tints on the torso + helm materials
-    const tintOf = r => ({ magic:0x2244aa, rare:0xaa8811, unique:0x994d0f }[r] || 0x000000);
-    const armor = RPG.player.equip.armor, helm = RPG.player.equip.helm;
-    if (player3d.refs.torsoMat) {
-      player3d.refs.torsoMat.emissive = new M.Color(tintOf(armor?.rarity));
-      player3d.refs.torsoMat.emissiveIntensity = armor?.rarity === 'normal' || !armor ? 0 : .45;
-    }
-    if (player3d.refs.helmMat) {
-      player3d.refs.helmMat.emissive = new M.Color(tintOf(helm?.rarity));
-      player3d.refs.helmMat.emissiveIntensity = helm?.rarity === 'normal' || !helm ? 0 : .45;
-    }
+  // ---------- CHARACTER RIG ----------
+  /* The character rig.
+
+     The old one was six primitives: a cone-topped cylinder with sticks for limbs. It read
+     as a chess piece because it had no joints, no shoulders, no taper and no silhouette.
+     This one is built the way a game character actually is — a shaped torso with a chest
+     and a waist, a neck, deltoid caps, upper arm / forearm / hand and thigh / shin / boot
+     hierarchies that bend at the elbow and knee, plus a belt and class silhouette on top.
+
+     Limbs are nested groups pivoting at the joint, so `armR.rotation.x` still drives the
+     whole arm and every existing animation keeps working. */
+  function limb(parent, mats, s, upperLen, lowerLen, upperR, lowerR, side) {
+    const root = new M.Group();                       // pivots at shoulder / hip
+    const upper = new M.Mesh(new M.CylinderGeometry(upperR*s, upperR*.86*s, upperLen*s, 7), mats.limb);
+    upper.position.y = -upperLen*s/2; upper.castShadow = true; root.add(upper);
+    const joint = new M.Mesh(new M.SphereGeometry(upperR*.92*s, 7, 6), mats.joint);
+    joint.position.y = -upperLen*s; root.add(joint);
+    const lower = new M.Group();                      // pivots at elbow / knee
+    lower.position.y = -upperLen*s;
+    const lowerMesh = new M.Mesh(new M.CylinderGeometry(upperR*.82*s, lowerR*s, lowerLen*s, 7), mats.limb);
+    lowerMesh.position.y = -lowerLen*s/2; lowerMesh.castShadow = true; lower.add(lowerMesh);
+    root.add(lower);
+    return { root, lower, upper };
   }
 
-  // ---------- CHARACTERS ----------
   function buildCharacter(color, isEnemy=false, scale=1) {
     const rig_refs = {};
     const g = new M.Group(); const body = new M.Group();
-    const c = mat(color, .6, .25);
-    const torso = new M.Mesh(new M.CylinderGeometry(.34*scale, .42*scale, .9*scale, 8), c);
-    torso.position.y = 1.05*scale; torso.castShadow = true; body.add(torso);
-    const head = new M.Mesh(new M.SphereGeometry(.28*scale, 12, 10), mat(isEnemy?color:0xe8c39a, .7));
-    head.position.y = 1.85*scale; head.castShadow = true; body.add(head);
-    const helm = new M.Mesh(new M.ConeGeometry(.3*scale, .5*scale, 8), c);
-    helm.position.y = 2.12*scale; body.add(helm);
-    rig_refs.classHelm = helm;
-    const armGeo = new M.CylinderGeometry(.09*scale, .08*scale, .7*scale, 6);
-    const armL = new M.Mesh(armGeo, c); armL.position.set(-.5*scale, 1.15*scale, 0); armL.rotation.z = .25; body.add(armL);
-    const armR = new M.Mesh(armGeo, c); armR.position.set(.5*scale, 1.15*scale, 0); armR.rotation.z = -.25; body.add(armR);
-    const legGeo = new M.CylinderGeometry(.11*scale, .09*scale, .65*scale, 6);
-    const legMat = mat(0x2a2f3a, .9);
-    rig_refs.legMat = legMat;
-    const legL = new M.Mesh(legGeo, legMat); legL.position.set(-.18*scale, .35*scale, 0); body.add(legL);
-    const legR = new M.Mesh(legGeo, legMat); legR.position.set(.18*scale, .35*scale, 0); body.add(legR);
-    const sword = isEnemy ? buildWeaponMesh('sword') : buildWeaponMesh(currentWeaponType());
-    sword.scale.setScalar(scale);
-    sword.position.set(.6*scale, 1.15*scale, 0); sword.rotation.z = -.4; body.add(sword);
-    rig_refs.sword = sword; rig_refs.torsoMat = c; rig_refs.helmMat = c;
-    // class accessories (player only)
-    if (!isEnemy && typeof RPG !== 'undefined' && RPG.player) {
-      const cls = RPG.player.cls;
-      if (cls === 'knight') {
-        const cape = new M.Mesh(new M.PlaneGeometry(.85*scale, 1.15*scale),
-          new M.MeshStandardMaterial({ color: 0x7a1a1a, roughness: .9, side: M.DoubleSide }));
-        cape.position.set(0, 1.1*scale, -.3*scale); cape.rotation.x = .18; body.add(cape);
-        rig_refs.pauldrons = [];
-        for (const side of [-1,1]) {
-          const paul = new M.Mesh(new M.SphereGeometry(.18*scale, 8, 6, 0, Math.PI*2, 0, Math.PI/2),
-            mat(0xd4af37, .4, .8));
-          paul.position.set(side*.48*scale, 1.52*scale, 0); body.add(paul);
-          rig_refs.pauldrons.push(paul);
-        }
-        rig_refs.cape = cape;
-      } else if (cls === 'rogue') {
-        const hood = new M.Mesh(new M.ConeGeometry(.34*scale, .42*scale, 8), mat(0x2a1a3a, .85));
-        hood.position.y = 2*scale; body.add(hood);
-        const scarf = new M.Mesh(new M.TorusGeometry(.22*scale, .07*scale, 6, 12), mat(0x4a2a6a, .85));
-        scarf.position.y = 1.6*scale; scarf.rotation.x = Math.PI/2; body.add(scarf);
-      } else if (cls === 'sorceress') {
-        const hat = new M.Mesh(new M.ConeGeometry(.42*scale, .55*scale, 9), mat(0x1a3a5c, .85));
-        hat.position.y = 2.25*scale; body.add(hat);
-        const brim = new M.Mesh(new M.CylinderGeometry(.55*scale, .55*scale, .05*scale, 12), mat(0x1a3a5c, .85));
-        brim.position.y = 2*scale; body.add(brim);
-        const orb = new M.Mesh(new M.SphereGeometry(.12*scale, 10, 8), mat(0x66ccff, .2, .2, 0x2288ff, 1.5));
-        orb.position.set(.6*scale, 1.75*scale, 0); body.add(orb);
-      }
+    const s = scale;
+    /* A hero starts in what they were carried in wearing: a linen shirt, trousers and
+       plain shoes — no plate, no helm, no cape. Every piece of armour below is hung on
+       this rig by applyGearVisuals() from what is actually equipped, so what you see on
+       the character is the gear you found. Enemies wear their family colour as hide. */
+    const shirtCol = isEnemy ? color
+      : new M.Color(color).offsetHSL(0, -.46, .18).getHex();   // washed linen in the class hue
+    const c = mat(shirtCol, .93, .02);
+    const dark = isEnemy ? new M.Color(color).offsetHSL(0, .04, -.14).getHex() : 0x413a2c;
+    const trim = isEnemy ? new M.Color(color).offsetHSL(0, .1, -.28).getHex() : 0x5c4c36;
+    const mats = {
+      limb: mat(dark, .93, .03),
+      joint: mat(trim, .9, .05),
+      leather: mat(0x3a2e22, .92, .05),
+    };
+    if (typeof TexFactory !== 'undefined') {
+      TexFactory.applyNormal(c, 'cloth', 3, 3, 1.0);
+      TexFactory.applyNormal(mats.limb, 'cloth', 3, 3, .9);
+      TexFactory.applyNormal(mats.leather, 'cloth', 2, 2, .8);
     }
+    rig_refs.legMat = mats.limb;
+
+    // ---- torso: chest, waist, belt ----
+    const hips = new M.Mesh(new M.CylinderGeometry(.30*s, .26*s, .26*s, 9), mats.leather);
+    hips.position.y = .92*s; hips.castShadow = true; body.add(hips);
+    const chest = new M.Mesh(new M.CylinderGeometry(.40*s, .30*s, .62*s, 9), c);
+    chest.position.y = 1.36*s; chest.castShadow = true; body.add(chest);
+    const belt = new M.Mesh(new M.CylinderGeometry(.32*s, .32*s, .1*s, 10), mats.joint);
+    belt.position.y = 1.04*s; body.add(belt);
+    // the shirt's shoulder line — cloth, not a pauldron
+    const yoke = new M.Mesh(new M.BoxGeometry(.68*s, .18*s, .28*s), c);
+    yoke.position.set(0, 1.66*s, -.03*s); yoke.castShadow = true; body.add(yoke);
+
+    // ---- neck and head ----
+    const neck = new M.Mesh(new M.CylinderGeometry(.10*s, .13*s, .16*s, 7), mats.leather);
+    neck.position.y = 1.75*s; body.add(neck);
+    const skin = isEnemy ? color : 0xdcb08a;
+    const head = new M.Mesh(new M.SphereGeometry(.235*s, 14, 12), mat(skin, .78, .02));
+    head.scale.set(.94, 1.1, 1);                       // a skull is not a ball
+    head.position.y = 1.98*s; head.castShadow = true; body.add(head);
+    const jaw = new M.Mesh(new M.BoxGeometry(.2*s, .12*s, .2*s), mat(skin, .78));
+    jaw.position.set(0, 1.88*s, .045*s); body.add(jaw);
+    // hair, not headgear — an equipped helm hides this
+    const hairCol = isEnemy ? new M.Color(color).offsetHSL(0, 0, -.2).getHex() : 0x33241a;
+    const hair = new M.Mesh(new M.SphereGeometry(.245*s, 12, 9, 0, Math.PI*2, 0, Math.PI*.56), mat(hairCol, .96));
+    hair.position.y = 1.985*s; hair.scale.set(.99, 1.06, 1.03); hair.castShadow = true; body.add(hair);
+    rig_refs.classHelm = hair;
+
+    // ---- arms ----
+    const armL = new M.Group(), armR = new M.Group();
+    for (const [side, holder] of [[-1, armL], [1, armR]]) {
+      const L = limb(body, mats, s, .42, .40, .105, .075, side);
+      holder.add(L.root);
+      holder.position.set(side*.44*s, 1.62*s, 0);
+      holder.rotation.z = side * .1;
+      body.add(holder);
+      // shirt sleeve cap — the piece that stops arms reading as dowels
+      const cap = new M.Mesh(new M.SphereGeometry(.15*s, 9, 7, 0, Math.PI*2, 0, Math.PI*.62), c);
+      cap.position.set(side*.44*s, 1.63*s, 0); cap.rotation.z = side*.22; cap.castShadow = true; body.add(cap);
+      // hand
+      const hand = new M.Mesh(new M.BoxGeometry(.13*s, .16*s, .1*s), mat(skin, .8));
+      hand.position.y = -.40*s; L.lower.add(hand);
+      (side < 0 ? (rig_refs.handL = hand) : (rig_refs.handR = hand));
+      holder.userData.lower = L.lower;
+    }
+
+    // ---- legs ----
+    const legL = new M.Group(), legR = new M.Group();
+    for (const [side, holder] of [[-1, legL], [1, legR]]) {
+      const L = limb(body, mats, s, .46, .44, .135, .095, side);
+      holder.add(L.root);
+      holder.position.set(side*.16*s, .92*s, 0);
+      body.add(holder);
+      const boot = new M.Mesh(new M.BoxGeometry(.19*s, .14*s, .3*s), mats.leather);
+      boot.position.set(0, -.46*s, .05*s); boot.castShadow = true; L.lower.add(boot);
+      (side < 0 ? (rig_refs.bootL = boot) : (rig_refs.bootR = boot));
+      holder.userData.lower = L.lower;
+    }
+
+    const sword = isEnemy ? buildWeaponMesh('sword') : buildWeaponMesh(currentWeaponType());
+    sword.scale.setScalar(s);
+    sword.position.set(.56*s, 1.28*s, .05*s); sword.rotation.z = -.4; body.add(sword);
+    rig_refs.sword = sword; rig_refs.torsoMat = c; rig_refs.helmMat = c;
+
+    // No class armour here on purpose. A hero begins in shirt and trousers; every plate,
+    // helm, greave and cape below is hung on the rig by applyGearVisuals() from the items
+    // actually equipped. rig_refs.gear holds whatever is currently attached.
+    rig_refs.gear = [];
+    rig_refs.skin = skin;
     if (isEnemy) {
+      const eyeMat = new M.MeshBasicMaterial({ color: 0xff2a2a });
       for (const side of [-1,1]) {
-        const eye = new M.Mesh(new M.SphereGeometry(.05*scale,6,6), new M.MeshBasicMaterial({ color:0xff2222 }));
-        eye.position.set(side*.1*scale, 1.9*scale, .24*scale); body.add(eye);
+        const eye = new M.Mesh(new M.SphereGeometry(.042*s, 7, 6), eyeMat);
+        eye.position.set(side*.085*s, 1.99*s, .19*s); body.add(eye);
       }
+      const glow = new M.PointLight(0xff2a2a, .5, 3.5); glow.position.y = 2*s; body.add(glow);
     }
     g.add(body);
+    // legL/legR/armL/armR stay the outer pivots so existing walk and swing anims are unchanged
     return { group: g, body, armL, armR, legL, legR, sword, head, refs: rig_refs };
   }
 
@@ -2254,12 +2487,23 @@ const World = (() => {
       const s = Math.sin(animT*12);
       player3d.legL.rotation.x = s*.7; player3d.legR.rotation.x = -s*.7;
       player3d.armL.rotation.x = -s*.5; player3d.armR.rotation.x = s*.5;
+      // knees and elbows actually bend — the leg trailing behind folds, the leading one straightens
+      const flex = (holder, phase) => {
+        const lower = holder.userData && holder.userData.lower;
+        if (lower) lower.rotation.x = Math.max(0, -Math.sin(animT*12 + phase)) * .85;
+      };
+      flex(player3d.legL, 0); flex(player3d.legR, Math.PI);
+      flex(player3d.armL, Math.PI); flex(player3d.armR, 0);
       player3d.body.position.y = Math.abs(Math.sin(animT*12))*.08;
+      player3d.body.rotation.z = Math.sin(animT*12)*.03;   // a little shoulder roll
       stepT += dt; if (stepT > .3) { stepT = 0; AudioSys.play('step'); }
     } else {
       player3d.legL.rotation.x = player3d.legR.rotation.x = 0;
       player3d.armL.rotation.x = player3d.armR.rotation.x = 0;
+      for (const h of [player3d.legL, player3d.legR, player3d.armL, player3d.armR])
+        if (h.userData && h.userData.lower) h.userData.lower.rotation.x *= .82;   // ease out of the stride
       player3d.body.position.y = Math.sin(animT*2)*.03;
+      player3d.body.rotation.z *= .85;
     }
     p.y = groundY(p.x, p.z);
     if (player3d.refs && player3d.refs.cape) player3d.refs.cape.rotation.x = .18 + Math.sin(animT*3)*.06 + (moving?.25:0);
@@ -2530,7 +2774,7 @@ const World = (() => {
   }
 
   return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
-    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture, nearNPC, refreshPlayerGear, buildWeaponMesh, currentWeaponType, buildShieldMesh, buildHelmMesh,
+    syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture, nearNPC, refreshPlayerGear, applyGearVisuals, buildCharacter, buildWeaponMesh, currentWeaponType, buildShieldMesh, buildHelmMesh,
     WAYSTONES, nearWaystone, useWaystone, waystoneAttuned, waystoneTravel, travelTo, ZONES, releaseKeys,
     setQuality, QUALITY, get quality(){ return qualityKey; },
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },

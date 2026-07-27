@@ -23,31 +23,73 @@ async def main():
         await page.wait_for_timeout(1800)
 
 
-        # 1. equip a full rare/unique kit programmatically, refresh visuals
+        # 1. equip a full kit — every visible piece now comes from an item, so the
+        #    assertion is about what applyGearVisuals attached, not about fixed refs
         checks = await page.evaluate("""() => {
           const p = RPG.player;
           p.equip.armor = RPG.genItem(12, 'rare', 'armor');
-          p.equip.helm = RPG.genItem(12, 'rare', 'helm');
+          p.equip.helm  = RPG.genItem(12, 'rare', 'helm');
           p.equip.boots = RPG.genItem(10, 'magic', 'boots');
           p.equip.amulet = RPG.genItem(10, 'unique', 'amulet');
           p.equip.weapon = RPG.genItem(12, 'rare', 'weapon');
           RPG.recalc();
           World.refreshPlayerGear();
           const r = World.player3d.refs;
+          let meshes = 0;
+          for (const o of r.gear) o.traverse && o.traverse(x => { if (x.isMesh) meshes++; });
           return {
-            shield: !!r.shield,
-            helmMesh: !!r.helmMesh,
-            pauldronCount: r.pauldrons ? r.pauldrons.length : 0,
-            pauldronScale: r.pauldrons && r.pauldrons[0] ? +r.pauldrons[0].scale.x.toFixed(2) : 0,
-            shins: r.shins ? r.shins.length : 0,
-            amuletMesh: !!r.amuletMesh,
-            uniqueAura: !!r.uniqueAura,
-            uniqueLight: !!r.uniqueLight,
+            pieces: r.gear.length, meshes,
+            hairHidden: r.classHelm ? !r.classHelm.visible : false,   // a helm covers the hair
+            uniqueAura: !!r.uniqueAura, uniqueLight: !!r.uniqueLight,
+            weapon: !!r.sword,
             armorName: p.equip.armor.name, helmName: p.equip.helm.name,
             amuletName: p.equip.amulet.name, amuletRarity: p.equip.amulet.rarity,
           };
         }""")
         print('gear visuals:', checks)
+        print('PASS full kit attaches gear:',
+              checks['pieces'] >= 4 and checks['meshes'] >= 8
+              and checks['hairHidden'] and checks['uniqueAura'] and checks['weapon'])
+
+        # 2. a hero with nothing equipped wears shirt and trousers only
+        bare = await page.evaluate("""() => {
+          const p = RPG.player;
+          p.equip.armor = p.equip.helm = p.equip.boots = p.equip.amulet = null;
+          RPG.recalc(); World.refreshPlayerGear();
+          const r = World.player3d.refs;
+          return { pieces: r.gear.length, hairShown: r.classHelm ? r.classHelm.visible : false,
+                   weapon: !!r.sword };
+        }""")
+        print('bare hero:', bare)
+        print('PASS starter hero carries no armour, only a weapon:',
+              bare['pieces'] == 0 and bare['hairShown'] and bare['weapon'])
+
+        # 3. each armour base builds a different silhouette
+        silhouettes = await page.evaluate("""() => {
+          const out = {};
+          for (const name of ['Cloth Garb','Leather Armor','Chain Mail','Plate Armor','Starforged Mail']) {
+            RPG.player.equip.armor = { slot:'armor', name, rarity:'rare', def:20, icon:'x', level:9, affixes:[] };
+            World.refreshPlayerGear();
+            let n = 0;
+            for (const o of World.player3d.refs.gear) o.traverse && o.traverse(x => { if (x.isMesh) n++; });
+            out[name] = n;
+          }
+          RPG.player.equip.armor = null; World.refreshPlayerGear();
+          return out;
+        }""")
+        print('armour silhouettes (mesh counts):', silhouettes)
+        print('PASS every armour base builds its own shape:',
+              len(set(silhouettes.values())) >= 4)
+
+        # restore a kit for the screenshots below
+        await page.evaluate("""() => {
+          const p = RPG.player;
+          p.equip.armor = RPG.genItem(12, 'rare', 'armor');
+          p.equip.helm  = RPG.genItem(12, 'rare', 'helm');
+          p.equip.boots = RPG.genItem(10, 'magic', 'boots');
+          p.equip.amulet = RPG.genItem(10, 'unique', 'amulet');
+          RPG.recalc(); World.refreshPlayerGear();
+        }""")
 
         # close-up screenshot in the world
         await page.evaluate("""() => {
