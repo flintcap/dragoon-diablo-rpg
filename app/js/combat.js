@@ -5,7 +5,7 @@
         enemy has opinions about that school.
      2. AILMENTS             — burn / poison / bleed / chill / shock / curse, with
         per-turn ticks and multipliers, on enemies AND on the party.
-     3. ADDITIONS            — the Legend of Dragoon pillar: named combo chains with
+     3. ADDITIONS            — the timed-combo pillar: named combo chains with
         their own beat counts, timing windows and mastery levels. */
 const Combat = (() => {
 
@@ -46,7 +46,7 @@ const Combat = (() => {
     tyrant:      { ice:0.45,    lightning:1.40, phys:0.80 },
     warden:      { phys:0.65,   fire:1.35, arcane:1.10 },
     stormcaller: { lightning:0.20, ice:0.60, fire:1.40 },
-    melbu:       { arcane:0.55, fire:0.85, ice:0.85, lightning:0.85, phys:1.00 },
+    malveth:     { arcane:0.55, fire:0.85, ice:0.85, lightning:0.85, phys:1.00 },
   };
   const AFF_MIN = 0.2, AFF_MAX = 1.8;
 
@@ -184,7 +184,7 @@ const Combat = (() => {
     knight: [
       { id:'whirl_sting',   name:'Whirlwind Sting', icon:'🌀', beats:3, mult:1.00, req:1,
         window:{ perfect:.10, good:.24 }, speed:1.00, spirit:5,
-        desc:'The first form every Dragoon learns. Forgiving timing, honest damage.' },
+        desc:'The first form every Starforged learns. Forgiving timing, honest damage.' },
       { id:'crush_dance',   name:'Crush Dance',     icon:'⚒', beats:4, mult:1.20, req:4,
         window:{ perfect:.085, good:.20 }, speed:.92, spirit:6, finisher:{ element:'phys', ailment:'bleed', chance:.45 },
         desc:'Four descending blows. The last one opens a wound that keeps bleeding.' },

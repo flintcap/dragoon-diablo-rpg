@@ -79,18 +79,18 @@ async def main():
         await page.wait_for_timeout(1800)
 
 
-        # 1. peaks portal must be LOCKED before Melbu dies
+        # 1. peaks portal must be LOCKED before Malveth dies
         await page.evaluate("() => { localStorage.removeItem('dd_save'); }")
-        await tp(page, -21, 45)
+        await tp(page, -64, 134)
         await page.keyboard.press('e'); await page.wait_for_timeout(1800)
         locked_zone = await page.evaluate("() => World.zone")
-        print('portal locked before melbuDead (stays forest):', locked_zone == 'forest')
+        print('portal locked before malvethDead (stays forest):', locked_zone == 'forest')
         locked_hint = await page.evaluate("() => document.getElementById('interact-hint').innerText")
         print('lock hint shown:', locked_hint.strip()[:60])
 
         # 2. unlock and enter Stormpeak Ascent
-        await page.evaluate("() => { RPG.player.flags = RPG.player.flags || {}; RPG.player.flags.melbuDead = true; }")
-        await tp(page, -21, 45)
+        await page.evaluate("() => { RPG.player.flags = RPG.player.flags || {}; RPG.player.flags.malvethDead = true; }")
+        await tp(page, -64, 134)
         await page.keyboard.press('e'); await page.wait_for_timeout(2500)
         zone = await page.evaluate("() => World.zone")
         print('entered peaks:', zone == 'peaks')

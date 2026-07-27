@@ -4,8 +4,74 @@ const World = (() => {
   let enemies = [], lootDrops = [], props = [], particles = null, portals = [], interactables = [], npcs = [], houses = []; let grottoBossSpawnedFlag = false;
   let keys = {}, mouseDown = false, camYaw = 0.6, camPitch = 0.62;
   const CAM_DIST = 12;
-  const WORLD_R = 70;
+  const WORLD_R = 70;              // default zone radius
+  let worldR = WORLD_R;            // the zone we're standing in, set by buildZone
   let animT = 0, onEncounter = null, bossSpawned = false, grottoBossSpawned = false, camSnap = true;
+  /* Graphics budget. Three.js is a forward renderer: every dynamic light is compiled into
+     every lit material's shader, and every shadow caster is drawn a second time. So the
+     things that actually cost frames — light count, shadows, foliage density, pixel ratio —
+     are all driven from one place, and the game measures itself on load and steps down if
+     the machine can't hold a frame rate. */
+  const QUALITY = {
+    high:   { trees: 1.0,  cover: 1.0,  lights: 14, shadows: true,  pr: 2,   fog: 1.0 },
+    medium: { trees: 0.72, cover: 0.6,  lights: 8,  shadows: true,  pr: 1.25, fog: 1.15 },
+    low:    { trees: 0.45, cover: 0.28, lights: 4,  shadows: false, pr: 1,   fog: 1.45 },
+  };
+  let qualityKey = 'high', Q = QUALITY.high, qualityLocked = false;
+  function setQuality(key, byPlayer) {
+    if (!QUALITY[key]) return;
+    if (byPlayer) qualityLocked = true;
+    qualityKey = key; Q = QUALITY[key];
+    if (renderer) {
+      renderer.shadowMap.enabled = Q.shadows;
+      renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pr));
+      renderer.setSize(innerWidth, innerHeight);
+    }
+    try { localStorage.setItem('dfs_quality', key); } catch (e) {}
+  }
+  /* Dynamic light budget. Every point light in the zone stays in the scene graph, but only
+     the N nearest the player are `visible` — and N is held constant, so three.js keeps
+     reusing the same compiled program instead of rebuilding every material each time a
+     light drops in or out. */
+  let managedLights = [], lightT = 0, _lp = null;
+  /* Performance watchdog. We can't know the player's GPU, so measure: sample the first few
+     seconds of real frames and step the quality down if the machine isn't holding up. Runs
+     once per session unless the player picks a level themselves. */
+  let perfSamples = [], perfDone = false, perfWait = 1.2;
+  function autoQuality(dt) {
+    if (perfDone || qualityLocked) return;
+    if (perfWait > 0) { perfWait -= dt; return; }      // ignore the first second of zone build
+    perfSamples.push(dt);
+    if (perfSamples.length < 90) return;
+    perfDone = true;
+    const avg = perfSamples.reduce((a, b) => a + b, 0) / perfSamples.length;
+    const fps = 1 / avg;
+    if (fps >= 34) return;
+    const next = qualityKey === 'high' ? 'medium' : qualityKey === 'medium' ? 'low' : null;
+    if (!next) return;
+    setQuality(next);
+    buildZone(currentZone, false, false);
+    if (typeof toast === 'function')
+      toast(`Graphics set to <b>${next}</b> — measured ${Math.round(fps)} fps.<br><small>Change it any time in the pause menu (Esc).</small>`);
+    // give the new settings their own chance to prove out
+    perfSamples = []; perfDone = false; perfWait = 2;
+  }
+
+  function updateLightBudget(dt) {
+    lightT -= dt;
+    if (lightT > 0) return;
+    lightT = .3;
+    if (!_lp) _lp = new M.Vector3();
+    managedLights.length = 0;
+    scene.traverse(o => { if (o.isPointLight && !o.userData.alwaysOn) managedLights.push(o); });
+    if (managedLights.length <= Q.lights) { for (const l of managedLights) l.visible = true; return; }
+    const p = player3d.group.position;
+    for (const l of managedLights) { l.getWorldPosition(_lp); l.userData.d2 = _lp.distanceToSquared(p); }
+    managedLights.sort((a, b) => a.userData.d2 - b.userData.d2);
+    for (let i = 0; i < managedLights.length; i++) managedLights[i].visible = i < Q.lights;
+  }
+  // wind-driven scenery: canopies, ferns and grass lean; mist sheets drift and breathe
+  let swayers = [], drifters = [];
   let currentZone = 'town', waystone = null;
 
   const M = THREE;
@@ -22,18 +88,19 @@ const World = (() => {
   const ZONES = {
     forest: {
       name: 'Whisperwood',
-      bg: 0x060a14, fog: [0x070d1a, 0.013], ground: 0x0e1a12,
-      ambient: [0x1c2742, 0.55], hemi: [0x2a3a5c, 0x080f0a, 0.28],
-      moon: [0x9db8ff, 1.1], rim: [0xff9a5c, 0.35],
-      sky: true, trees: 110, treePalette: 0x12261a, rocks: 40, crystals: 14,
-      ruins: true, fireflies: [0xaaffcc, 220],
+      bg: 0x060a14, fog: [0x0a1220, 0.0072], ground: 0x0e1a12,
+      ambient: [0x24304e, 0.68], hemi: [0x36486e, 0x0d1a10, 0.42],
+      moon: [0xaec8ff, 1.35], rim: [0xffb072, 0.5],
+      radius: 168,
+      sky: true, trees: 620, treePalette: 0x12261a, rocks: 150, crystals: 34,
+      ruins: true, fireflies: [0xaaffcc, 520],
       enemies: [
         { name:'Gloom Wolf',    kind:'wolf', color:0x4a5568, hp:40,  dmg:8,  xp:30,  gold:12, scale:.9, speed:2.2 },
         { name:'Cursed Husk',   kind:'golem', color:0x5a4a3a, hp:55,  dmg:11, xp:42,  gold:16, scale:1.0, speed:1.4 },
         { name:'Void Sprite',   kind:'wraith', color:0x7a3aa0, hp:35,  dmg:14, xp:50,  gold:22, scale:.8, speed:2.8 },
         { name:'Fallen Knight', kind:'humanoid', color:0x8a2020, hp:85,  dmg:16, xp:80,  gold:35, scale:1.15, speed:1.7 },
       ],
-      enemyCount: 14, levelMod: 0,
+      enemyCount: 34, levelMod: 0,
     },
     town: {
       name: 'Mirewood Hollow',
@@ -120,10 +187,10 @@ const World = (() => {
       enemyCount: 12, levelMod: 8,
     },
   };
-  const BOSS = { name:'Melbu\'s Herald', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true, bossId:'herald', kind:'humanoid', shielded:true };
+  const BOSS = { name:'Malveth\'s Herald', color:0x220a33, hp:420, dmg:24, xp:600, gold:400, scale:1.9, speed:1.9, boss:true, bossId:'herald', kind:'humanoid', shielded:true };
   const GROTTO_BOSS = { name:'Tyrant of the Deep', color:0x1a3a4a, hp:700, dmg:30, xp:1200, gold:900, scale:2.1, speed:1.6, boss:true, bossId:'tyrant', kind:'golem', enrage:{ at:.3, dmgMult:1.5 } };
-  const CRATER_BOSS = { name:'MELBU FRAHMA', color:0x33111a, hp:1100, dmg:36, xp:3000, gold:2000, scale:2.4, speed:1.8, boss:true, bossId:'melbu', kind:'humanoid',
-    phase2: { name:'🐉 MELBU FRAHMA — DRAGON AVATAR 🐉', dmgMult:1.4, healPct:.15, color:0x8a1420 } };
+  const CRATER_BOSS = { name:'MALVETH', color:0x33111a, hp:1100, dmg:36, xp:3000, gold:2000, scale:2.4, speed:1.8, boss:true, bossId:'malveth', kind:'humanoid',
+    phase2: { name:'🐉 MALVETH — DRAGON AVATAR 🐉', dmgMult:1.4, healPct:.15, color:0x8a1420 } };
   const WARDEN = { name:'The Warden of Chains', color:0x3a2a2a, hp:550, dmg:28, xp:900, gold:600, scale:2.0, speed:1.7,
     boss:true, bossId:'warden', kind:'humanoid', enrage:{ at:.35, dmgMult:1.4 } };
   const STORMCALLER = { name:'The Stormcaller', color:0x2a4a7a, hp:1500, dmg:44, xp:4500, gold:3000, scale:2.3, speed:2.1,
@@ -133,10 +200,12 @@ const World = (() => {
   // ---------- INIT ----------
   function init(canvas) {
     renderer = new M.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pr));
     renderer.setSize(innerWidth, innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = M.PCFSoftShadowMap;
+    try { const q = localStorage.getItem('dfs_quality'); if (q && QUALITY[q]) { qualityKey = q; Q = QUALITY[q]; qualityLocked = true; } } catch (e) {}
+    renderer.shadowMap.enabled = Q.shadows;
     renderer.outputEncoding = M.sRGBEncoding;
     renderer.toneMapping = M.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
@@ -152,18 +221,22 @@ const World = (() => {
   function buildZone(zoneId, first=false, arriveAtWaystone=false) {
     const Z = ZONES[zoneId];
     currentZone = zoneId;
+    worldR = Z.radius || WORLD_R;
+    managedLights.length = 0; lightT = 0;
     waystone = null;
     scene = new M.Scene();
     scene.background = new M.Color(Z.bg);
-    scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1]);
+    scene.fog = new M.FogExp2(Z.fog[0], Z.fog[1] * Q.fog);
     enemies = []; lootDrops = []; props = []; portals = []; interactables = []; npcs = []; houses = []; gulls = []; torches = []; drips = [];
+    swayers = []; drifters = [];
     snowPts = null; stormLight = null; summitTip = null; stormFlash = 0;
 
     const moon = new M.DirectionalLight(Z.moon[0], Z.moon[1]);
     moon.position.set(-30, 50, 20); moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
-    moon.shadow.camera.left = -60; moon.shadow.camera.right = 60;
-    moon.shadow.camera.top = 60; moon.shadow.camera.bottom = -60;
+    const sh = Math.min(70, worldR);   // shadows track the playable middle, not the whole zone
+    moon.shadow.camera.left = -sh; moon.shadow.camera.right = sh;
+    moon.shadow.camera.top = sh; moon.shadow.camera.bottom = -sh;
     moon.shadow.camera.far = 150; moon.shadow.bias = -0.0004;
     scene.add(moon);
     const rim = new M.DirectionalLight(Z.rim[0], Z.rim[1]); rim.position.set(40, 20, -40); scene.add(rim);
@@ -195,12 +268,68 @@ const World = (() => {
     if (arriveAtWaystone && w) player3d.group.position.set(w.spawn.x, 0, w.spawn.z);
     else if (zoneId === 'town') player3d.group.position.set(7, 0, 11); // on the square road, facing the well
     else player3d.group.position.set(zoneId === 'forest' ? 20 : 24, 0, zoneId === 'forest' ? 20 : 24);
+    player3d.group.position.y = groundY(player3d.group.position.x, player3d.group.position.z);
     camSnap = true;
     spawnEnemies(Z);
   }
 
+  // ============================================================
+  //  TERRAIN — deterministic relief, so the world has a horizon
+  // ============================================================
+  /* A flat disc reads as a tabletop no matter how much you decorate it. The Whisperwood
+     now sits on real relief: layered value noise, sampled by one shared `groundY(x,z)` so
+     the mesh, the hero, the enemies, the loot and every prop all agree on where the floor
+     is. Landmarks are flattened back out so quests never end up on a cliff. */
+  const TERRAIN = {
+    forest: { amp: 4.6, scale: 0.0105 },
+  };
+  function hash2(ix, iz) {
+    let h = ix * 374761393 + iz * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+  }
+  function vnoise(x, z) {
+    const ix = Math.floor(x), iz = Math.floor(z);
+    const fx = x - ix, fz = z - iz;
+    const sx = fx*fx*(3-2*fx), sz = fz*fz*(3-2*fz);   // smoothstep
+    const a = hash2(ix, iz),   b = hash2(ix+1, iz);
+    const c = hash2(ix, iz+1), d = hash2(ix+1, iz+1);
+    return (a + (b-a)*sx) + ((c + (d-c)*sx) - (a + (b-a)*sx)) * sz;
+  }
+  /* 0 = forced flat, 1 = full relief. Keeps the shrine plaza, the road, the river
+     corridor and both arrival points level and walkable. */
+  function flattenMask(x, z) {
+    let m = 1;
+    const soften = (d, inner, outer) => Math.max(0, Math.min(1, (d - inner) / (outer - inner)));
+    m = Math.min(m, soften(Math.hypot(x, z), 11, 24));                       // shrine plaza
+    const road = Math.abs(x - z) / Math.SQRT2;                               // the stone road
+    if (x > 0 && z > 0) m = Math.min(m, soften(road, 3.5, 9));
+    const riverA = Math.PI/4 + .95;                                          // the river cut
+    const rd = Math.abs(-Math.sin(riverA)*(x-6) + Math.cos(riverA)*(z+2));
+    m = Math.min(m, soften(rd, 5, 12));
+    m = Math.min(m, soften(Math.hypot(x-20, z-20), 5, 13));                  // portal arrival
+    const w = WAYSTONES[currentZone];
+    if (w) m = Math.min(m, soften(Math.hypot(x-w.x, z-w.z), 5, 12));         // the waystone dais
+    return m;
+  }
+  function groundY(x, z) {
+    const t = TERRAIN[currentZone];
+    if (!t) return 0;
+    const n = vnoise(x*t.scale, z*t.scale) - .5
+            + (vnoise(x*t.scale*2.9 + 31, z*t.scale*2.9 + 17) - .5) * .42
+            + (vnoise(x*t.scale*6.1 + 71, z*t.scale*6.1 + 53) - .5) * .16;
+    return n * t.amp * 2 * flattenMask(x, z);
+  }
+  /* Steepness at a point, 0..1 — drives where grass gives way to bare rock. */
+  function groundSlope(x, z) {
+    const d = 1.5;
+    return Math.min(1, (Math.abs(groundY(x+d,z) - groundY(x-d,z))
+                      + Math.abs(groundY(x,z+d) - groundY(x,z-d))) / (d*2.2));
+  }
+
   function buildGround(Z) {
-    const geo = new M.CircleGeometry(WORLD_R + 30, 64);
+    if (TERRAIN[currentZone]) return buildTerrain(Z);
+    const geo = new M.CircleGeometry(worldR + 30, 64);
     const gmat = mat(Z.ground, 1, 0);
     // procedural ground texture
     const gtex = (currentZone === 'forest' || currentZone === 'town') ? 'grass'
@@ -211,7 +340,7 @@ const World = (() => {
     const ground = new M.Mesh(geo, gmat);
     ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
     for (let i=0;i<90;i++){
-      const r = rnd(1.5, 5), p = randInCircle(WORLD_R+20);
+      const r = rnd(1.5, 5), p = randInCircle(worldR+20);
       const patch = new M.Mesh(new M.CircleGeometry(r, 12),
         mat(new M.Color(Z.ground).offsetHSL(0, rnd(-0.02,0.02), rnd(-0.015,0.02)).getHex(), 1, 0));
       patch.rotation.x = -Math.PI/2; patch.position.set(p.x, 0.01 + Math.random()*0.02, p.z);
@@ -220,7 +349,7 @@ const World = (() => {
     if (currentZone === 'town' || currentZone === 'coast' || currentZone === 'dungeon' || currentZone === 'peaks') {
       // town/coast/dungeon/peaks ground detail handled by their own builders
     } else if (currentZone === 'forest') {
-      for (let d=8; d<WORLD_R; d+=2.4){
+      for (let d=8; d<worldR; d+=2.4){
         const a = Math.PI/4;
         const stone = new M.Mesh(new M.CylinderGeometry(rnd(.4,.6), rnd(.5,.7), .1, 6), mat(0x1f2531, .95, .02));
         stone.position.set(Math.cos(a)*d + rnd(-.4,.4), .05, Math.sin(a)*d + rnd(-.4,.4));
@@ -230,7 +359,7 @@ const World = (() => {
       // glowing pools: teal water in grotto, lava in crater
       const lava = currentZone === 'crater';
       for (let i=0;i<14;i++){
-        const p = randInCircle(WORLD_R-8);
+        const p = randInCircle(worldR-8);
         const pool = new M.Mesh(new M.CircleGeometry(rnd(1.5,3.5), 16),
           new M.MeshStandardMaterial(lava
             ? { color:0x3a0f05, emissive:0xcc3300, emissiveIntensity:.9, roughness:.3, metalness:.4 }
@@ -241,11 +370,49 @@ const World = (() => {
     }
   }
 
+  /* The relief mesh. Vertex colours do the material work a single flat texture can't:
+     grass in the hollows, sun-bleached growth on the rises, bare earth on anything steep,
+     and a damp dark band along the riverbanks. */
+  function buildTerrain(Z) {
+    const SEG = worldR > 110 ? 208 : 132, SPAN = (worldR + 34) * 2;
+    const geo = new M.PlaneGeometry(SPAN, SPAN, SEG, SEG);
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    const lo   = new M.Color(0x16301c);  // shaded hollows
+    const mid  = new M.Color(0x1e3d22);  // open grass
+    const high = new M.Color(0x35492a);  // dry growth on the rises
+    const rock = new M.Color(0x3b3a35);  // exposed earth on the steeps
+    const damp = new M.Color(0x14281f);  // riverbank
+    const c = new M.Color();
+    const riverA = Math.PI/4 + .95;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = -pos.getY(i);       // plane is rotated flat below
+      const h = groundY(x, z);
+      pos.setZ(i, h);
+      const t = Math.max(0, Math.min(1, (h + 3) / 6));
+      c.copy(lo).lerp(mid, Math.min(1, t*1.8)).lerp(high, Math.max(0, (t-.55)/.45));
+      c.lerp(rock, Math.min(.85, groundSlope(x, z) * 1.3));
+      const rd = Math.abs(-Math.sin(riverA)*(x-6) + Math.cos(riverA)*(z+2));
+      if (rd < 9) c.lerp(damp, (1 - rd/9) * .55);
+      // a little per-vertex mottle so large faces don't read as flat panels
+      const m = (vnoise(x*.35, z*.35) - .5) * .07;
+      col[i*3] = Math.max(0, c.r + m); col[i*3+1] = Math.max(0, c.g + m); col[i*3+2] = Math.max(0, c.b + m);
+    }
+    geo.setAttribute('color', new M.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const gmat = new M.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0 });
+    if (typeof TexFactory !== 'undefined') TexFactory.apply(gmat, 'grass', 46, 46);
+    const ground = new M.Mesh(geo, gmat);
+    ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+    scene.userData.terrain = ground;
+  }
+
   function buildClutter(Z) {
+    if (currentZone === 'forest') return;   // the wood uses instanced undergrowth instead
     if (currentZone !== 'forest') return;
     // grass tufts
     for (let i=0;i<260;i++){
-      const p = randInCircle(WORLD_R+8);
+      const p = randInCircle(worldR+8);
       const blades = 3;
       for (let b=0;b<blades;b++){
         const blade = new M.Mesh(new M.ConeGeometry(rnd(.04,.09), rnd(.25,.55), 4),
@@ -257,7 +424,7 @@ const World = (() => {
     }
     // nightbloom flowers
     for (let i=0;i<36;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       const col = [0x7ec8ff, 0xcc88ff, 0xff9a9a][rndi(0,2)];
       const f = new M.Mesh(new M.ConeGeometry(.09, .18, 5), mat(col, .5, 0, col, .5));
       f.position.set(p.x, .22, p.z); scene.add(f);
@@ -266,16 +433,15 @@ const World = (() => {
     }
     // fallen logs
     for (let i=0;i<9;i++){
-      const p = randInCircle(WORLD_R-5);
+      const p = randInCircle(worldR-5);
       if (Math.hypot(p.x,p.z) < 12) continue;
       const log = new M.Mesh(new M.CylinderGeometry(rnd(.2,.3), rnd(.22,.32), rnd(2,4), 7), mat(0x241a10, .95));
       log.position.set(p.x, .28, p.z);
       log.rotation.z = Math.PI/2; log.rotation.y = rnd(0,3);
       log.castShadow = log.receiveShadow = true; scene.add(log);
-      props.push({ x:p.x, z:p.z, r:1.4 });
     }
     // path edge pebbles
-    for (let d=8; d<WORLD_R; d+=4.5){
+    for (let d=8; d<worldR; d+=4.5){
       const a = Math.PI/4;
       for (const off of [-1.2, 1.2]) {
         const peb = new M.Mesh(new M.DodecahedronGeometry(rnd(.1,.22), 0), mat(0x252b38, .95));
@@ -285,17 +451,35 @@ const World = (() => {
     }
   }
 
+  /* One wind, sampled at each thing's own phase, so the whole wood leans together
+     without every fern moving in lockstep. */
+  function updateWind(dt) {
+    if (!swayers.length && !drifters.length) return;
+    const gust = 1 + Math.sin(animT * .23) * .55;      // slow swells rolling through
+    for (const s of swayers) {
+      const a = Math.sin(animT * 1.15 + s.phase) * s.amp * gust;
+      s.obj.rotation.z = a;
+      s.obj.rotation.x = Math.cos(animT * .85 + s.phase) * s.amp * .6 * gust;
+    }
+    for (const d of drifters) {
+      d.obj.position.y = d.baseY + Math.sin(animT * .3 + d.phase) * .5;
+      d.obj.material.opacity = .04 + Math.sin(animT * .42 + d.phase) * .022;
+      d.obj.rotation.z += dt * .015;
+    }
+  }
+
   // falling leaves
   let leaves = [];
   function buildLeaves() {
     leaves = [];
     if (currentZone !== 'forest') return;
-    for (let i=0;i<70;i++){
-      const leaf = new M.Mesh(new M.PlaneGeometry(.16,.2),
-        new M.MeshBasicMaterial({ color: [0x2a4a2a, 0x3a5a24, 0x4a3a1a][rndi(0,2)], transparent:true, opacity:.8, side:M.DoubleSide }));
-      const p = randInCircle(WORLD_R);
-      leaf.position.set(p.x, rnd(2, 12), p.z);
-      leaf.userData = { sway: rnd(0,6), fall: rnd(.4,.9) };
+    const leafMat = new M.MeshBasicMaterial({ color: 0x3a5a2e, transparent:true, opacity:.34,
+      side:M.DoubleSide, depthWrite:false });
+    for (let i=0;i<90;i++){
+      const leaf = new M.Mesh(new M.PlaneGeometry(.07,.09), leafMat);
+      const p = randInCircle(30);                 // they follow the hero, not the whole zone
+      leaf.position.set(p.x, rnd(1.5, 9), p.z);
+      leaf.userData = { sway: rnd(0,6), fall: rnd(.35,.7) };
       scene.add(leaf); leaves.push(leaf);
     }
   }
@@ -305,9 +489,10 @@ const World = (() => {
       leaf.userData.sway += dt;
       leaf.position.x += Math.sin(leaf.userData.sway*2)*dt*.8;
       leaf.rotation.set(leaf.userData.sway*2, leaf.userData.sway, 0);
-      if (leaf.position.y < 0) {
-        const p = randInCircle(WORLD_R);
-        leaf.position.set(p.x, rnd(8, 13), p.z);
+      const pp = player3d.group.position;
+      if (leaf.position.y < groundY(leaf.position.x, leaf.position.z)) {
+        const p = randInCircle(28);
+        leaf.position.set(pp.x + p.x, pp.y + rnd(7, 12), pp.z + p.z);
       }
     }
   }
@@ -433,8 +618,8 @@ const World = (() => {
       { id:'maera', name:'Elder Maera', role:'Village Elder', color:0x8a8a9a, x:3, z:3, wander:1,
         lines:[] }, // quest-aware lines provided by Main
       { id:'pip', name:'Pip', role:'Kid', color:0x4a6a3a, x:-6, z:18, wander:8,
-        lines:['Serah showed me a REAL Wingly feather! It glows!',
-               'When I grow up I\'m gonna be a Dragoon too!'],
+        lines:['Serah showed me a REAL Sylvani feather! It glows!',
+               'When I grow up I\'m gonna be a Starforged too!'],
         shop:null },
     ];
     for (const def of NPC_DEFS) {
@@ -484,15 +669,15 @@ const World = (() => {
     flame.position.y = h + .5; g.add(flame);
     const l = new M.PointLight(0xff8a3a, 1.3, 11); l.position.y = h + .6; g.add(l);
     g.position.set(x, 0, z); scene.add(g);
-    torches.push({ flame, l, seed: rnd(0, 10) });
+    torches.push({ flame, l, base: 1.3, seed: rnd(0, 10) });
   }
   function updateTorches(dt) {
-    animT += 0;
     for (const t of torches) {
       t.seed += dt * 8;
       const f = .9 + Math.sin(t.seed) * .18 + Math.sin(t.seed*2.7) * .08;
-      t.l.intensity = 1.3 * f;
+      t.l.intensity = t.base * f;
       t.flame.scale.setScalar(f);
+      t.flame.rotation.y += dt * 1.6;
     }
   }
   function buildWallSeg(x, z, w, d, rot=0) {
@@ -522,7 +707,7 @@ const World = (() => {
   }
   function buildDungeon(Z) {
     // perimeter walls
-    const R = WORLD_R + 6;
+    const R = worldR + 6;
     buildWallSeg(0, -R, R*2, 2); buildWallSeg(0, R, R*2, 2);
     buildWallSeg(-R, 0, 2, R*2); buildWallSeg(R, 0, 2, R*2);
     // corridor segments — a rough maze feel
@@ -544,7 +729,7 @@ const World = (() => {
     buildCell(-24, -30, .3); buildCell(24, -14, -.4); buildCell(-30, 8, 1.2); buildCell(18, 26, .2);
     // rubble
     for (let i=0;i<16;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       const rb = new M.Mesh(new M.DodecahedronGeometry(rnd(.2,.6), 0), mat(0x242a36, .9, .05));
       rb.position.set(p.x, rnd(.1,.3), p.z); rb.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3));
       rb.castShadow = true; scene.add(rb);
@@ -617,7 +802,7 @@ const World = (() => {
     }
     // palms scattered on the strand
     for (let i=0;i<10;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       if (p.x > 26 || Math.hypot(p.x,p.z) < 10) continue;
       buildPalm(p.x, p.z, rnd(.8, 1.3));
     }
@@ -632,14 +817,14 @@ const World = (() => {
     }
     // shells + driftwood
     for (let i=0;i<20;i++){
-      const p = randInCircle(WORLD_R-5);
+      const p = randInCircle(worldR-5);
       if (p.x > 30) continue;
       const sh = new M.Mesh(new M.ConeGeometry(rnd(.08,.16), rnd(.1,.2), 5),
         mat([0xd8cfc0, 0xc8b8a8, 0xe8e0d0][rndi(0,2)], .6));
       sh.position.set(p.x, .08, p.z); scene.add(sh);
     }
     for (let i=0;i<6;i++){
-      const p = randInCircle(WORLD_R-8);
+      const p = randInCircle(worldR-8);
       const dw = new M.Mesh(new M.CylinderGeometry(rnd(.1,.18), rnd(.12,.2), rnd(1.5,3), 6), texMat('wood', 2, 1));
       dw.position.set(p.x, .2, p.z); dw.rotation.z = Math.PI/2; dw.rotation.y = rnd(0,3);
       dw.castShadow = true; scene.add(dw);
@@ -702,32 +887,32 @@ const World = (() => {
     // ring of jagged mountains hemming the ascent
     for (let i=0;i<14;i++){
       const a = (i/14) * Math.PI*2 + rnd(-.08, .08);
-      const d = WORLD_R + rnd(4, 16);
+      const d = worldR + rnd(4, 16);
       buildPeakCone(Math.cos(a)*d, Math.sin(a)*d, rnd(7, 13), rnd(18, 34));
     }
     // inner crags — switchback feel
     for (let i=0;i<8;i++){
-      const a = rnd(0, Math.PI*2), d = rnd(24, WORLD_R-8);
+      const a = rnd(0, Math.PI*2), d = rnd(24, worldR-8);
       const x = Math.cos(a)*d, z = Math.sin(a)*d;
       if (Math.hypot(x-24, z-24) < 14 || Math.hypot(x, z+34) < 16) continue;
       buildPeakCone(x, z, rnd(2.5, 5), rnd(6, 12));
     }
     // dead pines clinging to the slope
     for (let i=0;i<26;i++){
-      const p = randInCircle(WORLD_R-4);
+      const p = randInCircle(worldR-4);
       if (Math.hypot(p.x-24, p.z-24) < 10 || Math.hypot(p.x, p.z+34) < 12) continue;
       buildDeadPine(p.x, p.z, rnd(.8, 1.5));
     }
     // boulders
     for (let i=0;i<24;i++){
-      const p = randInCircle(WORLD_R-3);
+      const p = randInCircle(worldR-3);
       const b = new M.Mesh(new M.DodecahedronGeometry(rnd(.4, 1.3), 0), texMat('iceRock', 1, 1, { rough:.95 }));
       b.position.set(p.x, rnd(.1, .4), p.z); b.rotation.set(rnd(0,3), rnd(0,3), rnd(0,3));
       b.castShadow = b.receiveShadow = true; scene.add(b);
     }
     // wind-scoured drift ridges
     for (let i=0;i<16;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       const drift = new M.Mesh(new M.SphereGeometry(rnd(1.2, 2.6), 10, 6), mat(0x3e4c62, 1, 0));
       drift.scale.set(1, rnd(.12, .2), rnd(.5, .8));
       drift.position.set(p.x, .02, p.z); drift.rotation.y = rnd(0, 6);
@@ -839,36 +1024,348 @@ const World = (() => {
     scene.userData.skyGlow = glow;
   }
 
-  function buildTree(x, z, s, palette) {
+  /* Two species, so the canopy has silhouette variety instead of one repeated cone.
+     Every tree gets flared roots at the base, bark-toned trunk variation and a swaying
+     canopy; `mats` is what the camera-blocking fade already hooks into. */
+  function buildTree(x, z, s, palette, kind) {
     const g = new M.Group(); const mats = [];
-    const trunk = new M.Mesh(new M.CylinderGeometry(.35*s, .55*s, 3.4*s, 7), fadeMat(0x241a10));
+    const y0 = groundY(x, z);
+    const bark = new M.Color(0x2a1d12).offsetHSL(0, rnd(-.04,.04), rnd(-.03,.04)).getHex();
+    const trunkH = (kind === 'broadleaf' ? 2.6 : 3.4) * s;
+    const trunk = new M.Mesh(new M.CylinderGeometry(.26*s, .5*s, trunkH, 8), fadeMat(bark));
     mats.push(trunk.material);
-    trunk.position.y = 1.7*s; trunk.castShadow = true; g.add(trunk);
-    const layers = [[2.6, 3.2, 3.4], [2.0, 2.6, 5.2], [1.3, 2.0, 6.8]];
-    for (const [r, h, y] of layers) {
-      const c = new M.Mesh(new M.ConeGeometry(r*s, h*s, 8),
-        fadeMat(new M.Color(palette).offsetHSL(0, rnd(-.03,.03), rnd(-.015,.02)).getHex()));
-      mats.push(c.material);
-      c.position.y = y*s; c.castShadow = true; g.add(c);
+    trunk.position.y = trunkH/2; trunk.castShadow = true; g.add(trunk);
+    // a flared collar at the base — one mesh instead of four separate roots
+    const collar = new M.Mesh(new M.CylinderGeometry(.5*s, .95*s, .5*s, 8), fadeMat(bark));
+    mats.push(collar.material);
+    collar.position.y = .22*s; g.add(collar);
+    const canopy = new M.Group();
+    if (kind === 'broadleaf') {
+      // clustered spheres — rounder, heavier, breaks up the conifer rhythm
+      for (let b = 0; b < 3; b++) {
+        const br = rnd(1.3, 2.1) * s;
+        const blob = new M.Mesh(new M.IcosahedronGeometry(br, 0),
+          fadeMat(new M.Color(palette).offsetHSL(rnd(-.02,.02), rnd(-.05,.05), rnd(-.03,.06)).getHex()));
+        mats.push(blob.material);
+        blob.position.set(rnd(-1.1,1.1)*s, trunkH + rnd(.2,1.5)*s, rnd(-1.1,1.1)*s);
+        canopy.add(blob);
+      }
+    } else {
+      for (const [r, h, y] of [[2.5, 3.2, .2], [1.8, 2.8, 1.9], [1.0, 2.2, 3.7]]) {
+        const c = new M.Mesh(new M.ConeGeometry(r*s, h*s, 9),
+          fadeMat(new M.Color(palette).offsetHSL(rnd(-.015,.015), rnd(-.04,.04), rnd(-.025,.035)).getHex()));
+        mats.push(c.material);
+        c.position.y = trunkH + y*s; canopy.add(c);
+      }
     }
-    g.position.set(x, 0, z); g.rotation.y = rnd(0, 6); scene.add(g);
-    props.push({ x, z, r: 1*s, mats });
+    g.add(canopy);
+    g.position.set(x, y0, z);
+    g.rotation.y = rnd(0, 6);
+    g.rotation.z = rnd(-.035, .035);   // nothing in a wood grows perfectly plumb
+    scene.add(g);
+    // collide against the trunk you can see, not the canopy overhead
+    props.push({ x, z, r: .6*s, mats });
+    swayers.push({ obj: canopy, amp: rnd(.012, .03) / Math.max(.6, s), phase: rnd(0, 6.3) });
+  }
+
+  /* Ground cover. None of it collides — it is there to make the floor read as a forest
+     floor rather than a green plane, and nothing is more infuriating than being blocked
+     by a fern.
+
+     All of it is drawn with InstancedMesh: ~2,600 pieces of undergrowth cost five draw
+     calls instead of five thousand, which is the difference between this zone running and
+     this zone being a slideshow. */
+  function instanced(geo, material, count, place) {
+    if (count <= 0) return null;
+    const im = new M.InstancedMesh(geo, material, count);
+    const m = new M.Matrix4(), q = new M.Quaternion(), e = new M.Euler(), pos = new M.Vector3(), sc = new M.Vector3();
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      if (place(i, pos, e, sc) === false) continue;
+      q.setFromEuler(e);
+      m.compose(pos, q, sc);
+      im.setMatrixAt(n++, m);
+    }
+    im.count = n;
+    im.instanceMatrix.needsUpdate = true;
+    im.frustumCulled = false;   // instances span the whole zone; one bounds test would cull all
+    scene.add(im);
+    return im;
+  }
+  function buildUndergrowth(Z) {
+    const clear = (x, z) => Math.hypot(x, z) > 9 && Math.hypot(x-20, z-20) > 6;
+    const spread = worldR + 6;
+
+    // ferns — one frond geometry, five per cluster, scattered as a single instanced mesh
+    const fernMat = new M.MeshStandardMaterial({ color: 0x3a6b33, roughness: .95, side: M.DoubleSide });
+    const fernGeo = new M.ConeGeometry(.2, 1.3, 4);
+    const fernSpots = [];
+    const nFern = Math.round(340 * Q.cover);
+    for (let i = 0; i < nFern; i++) {
+      const p = randInCircle(spread);
+      if (clear(p.x, p.z)) fernSpots.push(p);
+    }
+    instanced(fernGeo, fernMat, fernSpots.length * 5, (i, pos, e, sc) => {
+      const spot = fernSpots[(i / 5) | 0];
+      const a = (i % 5)/5*Math.PI*2 + (hash2(i, 7) - .5);
+      const s = .9 + hash2(i, 11) * 1.1;
+      pos.set(spot.x + Math.cos(a)*.18*s, groundY(spot.x, spot.z) + .34*s, spot.z + Math.sin(a)*.18*s);
+      e.set(Math.cos(a)*.7, hash2(i, 13)*6.3, -Math.sin(a)*.7);
+      sc.setScalar(s);
+    });
+
+    // grass tufts — a small fan of tapered blades, three per tuft
+    const tuftMat = new M.MeshStandardMaterial({ color: 0x3f6f33, roughness: 1, side: M.DoubleSide });
+    const tuftGeo = new M.ConeGeometry(.055, .72, 3);
+    const tuftSpots = [];
+    const nTuft = Math.round(900 * Q.cover);
+    for (let i = 0; i < nTuft; i++) {
+      const p = randInCircle(spread + 4);
+      if (clear(p.x, p.z)) tuftSpots.push(p);
+    }
+    instanced(tuftGeo, tuftMat, tuftSpots.length * 3, (i, pos, e, sc) => {
+      const spot = tuftSpots[(i / 3) | 0];
+      const s = .8 + hash2(i, 19) * .8;
+      const a = (i % 3)/3*Math.PI*2 + hash2(i, 23)*1.2;
+      pos.set(spot.x + Math.cos(a)*.11, groundY(spot.x, spot.z) + .3*s, spot.z + Math.sin(a)*.11);
+      e.set(Math.cos(a)*.34, hash2(i, 27)*6.3, -Math.sin(a)*.34);   // blades splay outward
+      sc.setScalar(s);
+    });
+
+    // bushes
+    const bushMat = new M.MeshStandardMaterial({ color: 0x24451f, roughness: .95 });
+    const bushGeo = new M.IcosahedronGeometry(.5, 0);
+    const bushSpots = [];
+    const nBush = Math.round(220 * Q.cover);
+    for (let i = 0; i < nBush; i++) {
+      const p = randInCircle(worldR);
+      if (clear(p.x, p.z)) bushSpots.push(p);
+    }
+    instanced(bushGeo, bushMat, bushSpots.length * 3, (i, pos, e, sc) => {
+      const spot = bushSpots[(i / 3) | 0];
+      pos.set(spot.x + (hash2(i,29)-.5)*.9, groundY(spot.x, spot.z) + .3 + hash2(i,31)*.35, spot.z + (hash2(i,37)-.5)*.9);
+      e.set(hash2(i,41)*3, hash2(i,43)*6.3, 0);
+      sc.setScalar(.7 + hash2(i,47)*.7);
+    });
+
+    // toadstools in rings — the wood is not well
+    const capMat = new M.MeshStandardMaterial({ color: 0x8fd0c0, roughness: .6,
+      emissive: 0x2f6a5c, emissiveIntensity: .55 });
+    const capGeo = new M.SphereGeometry(.15, 7, 5, 0, Math.PI*2, 0, Math.PI/2);
+    const rings = [];
+    const nRing = Math.round(60 * Q.cover);
+    for (let i = 0; i < nRing; i++) {
+      const c0 = randInCircle(worldR - 8);
+      if (clear(c0.x, c0.z)) rings.push(c0);
+    }
+    instanced(capGeo, capMat, rings.length * 5, (i, pos, e, sc) => {
+      const c0 = rings[(i / 5) | 0];
+      const a = (i % 5)/5*Math.PI*2 + (hash2(i,53)-.5)*.7, rr = .5 + hash2(i,59)*1.1;
+      const mx = c0.x + Math.cos(a)*rr, mz = c0.z + Math.sin(a)*rr;
+      const s = .5 + hash2(i,61)*.6;
+      pos.set(mx, groundY(mx,mz) + .3*s, mz);
+      e.set(0, 0, 0); sc.setScalar(s);
+    });
+
+    // surface roots
+    const rootMat = mat(0x24190f, .95);
+    const rootGeo = new M.TorusGeometry(.8, .1, 5, 8, Math.PI);
+    instanced(rootGeo, rootMat, 130, (i, pos, e, sc) => {
+      const p = randInCircle(worldR - 6);
+      if (!clear(p.x, p.z)) return false;
+      pos.set(p.x, groundY(p.x,p.z) + .02, p.z);
+      e.set(0, hash2(i,67)*6.3, 0);
+      sc.setScalar(.6 + hash2(i,71)*.8);
+    });
+
+    // fallen logs
+    const logMat = mat(0x241a10, .95);
+    const logGeo = new M.CylinderGeometry(.26, .3, 3.2, 7);
+    instanced(logGeo, logMat, 40, (i, pos, e, sc) => {
+      const p = randInCircle(worldR - 5);
+      if (!clear(p.x, p.z)) return false;
+      pos.set(p.x, groundY(p.x,p.z) + .28, p.z);
+      e.set(0, hash2(i,73)*6.3, Math.PI/2);
+      sc.setScalar(.7 + hash2(i,79)*.8);
+    });
+  }
+
+  /* Mist pooling in the low ground, and shafts of moonlight through the canopy. Both are
+     cheap additive planes — the trick is that they only read as volume because the terrain
+     underneath them actually has low ground to pool in. */
+  function buildAtmosphere(Z) {
+    const mistMat = new M.MeshBasicMaterial({ color: 0x9fc0d8, transparent: true, opacity: .055,
+      blending: M.AdditiveBlending, depthWrite: false, side: M.DoubleSide });
+    for (let i = 0; i < 34; i++) {
+      const p = randInCircle(worldR - 6);
+      const h = groundY(p.x, p.z);
+      if (h > .6) continue;                       // mist collects in the hollows
+      const m = new M.Mesh(new M.PlaneGeometry(rnd(10, 22), rnd(10, 22)), mistMat);
+      m.rotation.x = -Math.PI/2;
+      m.position.set(p.x, h + rnd(.5, 1.6), p.z);
+      scene.add(m);
+      drifters.push({ obj: m, phase: rnd(0,6.3), baseY: m.position.y });
+    }
+    // moonlight through the canopy
+    for (let i = 0; i < 9; i++) {
+      const p = randInCircle(worldR - 14);
+      const shaft = new M.Mesh(new M.CylinderGeometry(rnd(.5,1.1), rnd(2.4,4.2), 22, 7, 1, true),
+        new M.MeshBasicMaterial({ color: 0x9db8ff, transparent: true, opacity: .045,
+          blending: M.AdditiveBlending, depthWrite: false, side: M.DoubleSide }));
+      shaft.position.set(p.x, groundY(p.x,p.z) + 11, p.z);
+      shaft.rotation.z = rnd(-.16, .16);
+      scene.add(shaft);
+    }
+  }
+
+  /* Landmarks. A big map is only big if it has places in it — these are fixed, hand-placed
+     and visible from a distance, so crossing the Whisperwood is navigation rather than
+     wandering through procedural sameness. Each also seeds the terrain flattening it needs. */
+  const FOREST_LANDMARKS = [
+    { kind:'watchtower', x:-92,  z: 38 },
+    { kind:'stones',     x: 74,  z:-88 },
+    { kind:'camp',       x: 46,  z: 92 },
+    { kind:'bog',        x:-58,  z:-104 },
+    { kind:'burn',       x:118,  z: 30 },
+    { kind:'gate',       x:-124, z:-42 },
+  ];
+  function buildLandmarks() {
+    for (const L of FOREST_LANDMARKS) {
+      const y = groundY(L.x, L.z);
+      if (L.kind === 'watchtower') {
+        // a broken tower — the tallest thing in the wood, and the easiest to navigate by
+        for (let d = 0; d < 10; d++) {
+          const r = .62 - d*.018, h = 2.3;
+          const seg = new M.Mesh(new M.CylinderGeometry(r*3.1, r*3.3, h, 12),
+            mat(d % 2 ? 0x232936 : 0x2c3342, .93, .05));
+          seg.position.set(L.x, y + h*(d + .5), L.z);
+          seg.rotation.y = rnd(0, 6);
+          seg.castShadow = true; scene.add(seg);
+          if (d === 9) {                              // the top course is sheared away
+            seg.scale.y = .45;
+            seg.position.y = y + h*9 + h*.22;
+          }
+        }
+        const door = new M.Mesh(new M.BoxGeometry(1.5, 2.4, .4), mat(0x11141c, .95));
+        door.position.set(L.x, y + 1.2, L.z + 1.95); scene.add(door);
+        for (let i = 0; i < 9; i++) {                 // rubble at the foot
+          const a = rnd(0, 6.3), rr = rnd(2.6, 6);
+          const bx = L.x + Math.cos(a)*rr, bz = L.z + Math.sin(a)*rr;
+          const block = new M.Mesh(new M.BoxGeometry(rnd(.5,1.1), rnd(.4,.8), rnd(.5,1.1)),
+            mat(0x2b3140, .95));
+          block.position.set(bx, groundY(bx,bz) + .25, bz); block.rotation.y = rnd(0,6);
+          block.castShadow = true; scene.add(block);
+        }
+        const beacon = new M.PointLight(0x7ec8ff, 1.1, 26);
+        beacon.position.set(L.x, y + 22, L.z); beacon.userData.alwaysOn = true; scene.add(beacon);
+        props.push({ x:L.x, z:L.z, r: 2.2 });
+      } else if (L.kind === 'stones') {
+        // a ring of monoliths, older than the shrine
+        for (let i = 0; i < 9; i++) {
+          const a = i/9*Math.PI*2, r = 7.5;
+          const sx = L.x + Math.cos(a)*r, sz = L.z + Math.sin(a)*r;
+          const h = rnd(3.4, 5.6);
+          const mono = new M.Mesh(new M.BoxGeometry(rnd(.9,1.4), h, rnd(.5,.8)), mat(0x2e3444, .95));
+          mono.position.set(sx, groundY(sx,sz) + h/2, sz);
+          mono.rotation.set(rnd(-.06,.06), a + rnd(-.2,.2), rnd(-.07,.07));
+          mono.castShadow = true; scene.add(mono);
+          props.push({ x:sx, z:sz, r: .7 });
+        }
+        const altar = new M.Mesh(new M.CylinderGeometry(1.5, 1.7, .5, 9), mat(0x262c3a, .95));
+        altar.position.set(L.x, y + .25, L.z); altar.receiveShadow = true; scene.add(altar);
+        const gl = new M.PointLight(0x8a7aff, 1.0, 20); gl.position.set(L.x, y + 2, L.z); scene.add(gl);
+      } else if (L.kind === 'camp') {
+        // somebody was living out here, and left in a hurry
+        for (const [ox, oz] of [[-2.4, 1.2], [2.6, -1.4]]) {
+          const tx = L.x + ox, tz = L.z + oz;
+          const tent = new M.Mesh(new M.ConeGeometry(1.7, 2.1, 4), mat(0x4a4030, .95));
+          tent.position.set(tx, groundY(tx,tz) + 1.05, tz); tent.rotation.y = rnd(0,6);
+          tent.castShadow = true; scene.add(tent);
+          props.push({ x:tx, z:tz, r: 1.2 });
+        }
+        const ring = new M.Mesh(new M.TorusGeometry(.85, .16, 5, 12), mat(0x2b3140, .95));
+        ring.rotation.x = Math.PI/2; ring.position.set(L.x, y + .1, L.z); scene.add(ring);
+        const fire = new M.Mesh(new M.ConeGeometry(.4, 1.0, 7),
+          new M.MeshBasicMaterial({ color: 0xff9a4d, transparent: true, opacity: .85,
+            blending: M.AdditiveBlending, depthWrite: false }));
+        fire.position.set(L.x, y + .6, L.z); scene.add(fire);
+        const fl = new M.PointLight(0xff8a3a, 2.0, 20); fl.position.set(L.x, y + 1.2, L.z); scene.add(fl);
+        torches.push({ flame: fire, l: fl, base: 2.0, seed: rnd(0, 10) });
+        for (let i = 0; i < 3; i++) {                  // drying racks
+          const rx = L.x + rnd(-4,4), rz = L.z + rnd(-4,4);
+          const post = new M.Mesh(new M.CylinderGeometry(.08,.1,1.8,5), mat(0x33240f, .95));
+          post.position.set(rx, groundY(rx,rz) + .9, rz); scene.add(post);
+        }
+      } else if (L.kind === 'bog') {
+        // dead water and dead trees — the wood turning to something else
+        for (let i = 0; i < 7; i++) {
+          const a = rnd(0,6.3), rr = rnd(0, 13);
+          const px = L.x + Math.cos(a)*rr, pz = L.z + Math.sin(a)*rr;
+          const pool = new M.Mesh(new M.CircleGeometry(rnd(2.4, 5.5), 18),
+            new M.MeshStandardMaterial({ color: 0x0b1a16, roughness: .18, metalness: .55,
+              emissive: 0x0a2a22, emissiveIntensity: .3 }));
+          pool.rotation.x = -Math.PI/2; pool.position.set(px, groundY(px,pz) + .05, pz);
+          scene.add(pool);
+        }
+        for (let i = 0; i < 16; i++) {                 // drowned trunks
+          const a = rnd(0,6.3), rr = rnd(2, 15);
+          const tx = L.x + Math.cos(a)*rr, tz = L.z + Math.sin(a)*rr;
+          const h = rnd(3, 6.5);
+          const dead = new M.Mesh(new M.CylinderGeometry(.1, .28, h, 6), mat(0x1d1a16, .97));
+          dead.position.set(tx, groundY(tx,tz) + h/2, tz);
+          dead.rotation.set(rnd(-.2,.2), rnd(0,6), rnd(-.2,.2));
+          dead.castShadow = true; scene.add(dead);
+          props.push({ x:tx, z:tz, r:.35 });
+        }
+        const gl = new M.PointLight(0x2a8a6a, .8, 26); gl.position.set(L.x, y + 2, L.z); scene.add(gl);
+      } else if (L.kind === 'burn') {
+        // where the Star's heat washed through — charred stumps and ash
+        for (let i = 0; i < 26; i++) {
+          const a = rnd(0,6.3), rr = rnd(0, 16);
+          const sx = L.x + Math.cos(a)*rr, sz = L.z + Math.sin(a)*rr;
+          const h = rnd(.7, 2.6);
+          const stump = new M.Mesh(new M.CylinderGeometry(rnd(.2,.45), rnd(.35,.6), h, 7), mat(0x14100e, .98));
+          stump.position.set(sx, groundY(sx,sz) + h/2, sz);
+          stump.rotation.z = rnd(-.12,.12);
+          stump.castShadow = true; scene.add(stump);
+          if (h > 1.6) props.push({ x:sx, z:sz, r:.5 });
+        }
+        const ash = new M.Mesh(new M.CircleGeometry(18, 28), mat(0x1a1613, 1, 0));
+        ash.rotation.x = -Math.PI/2; ash.position.set(L.x, y + .06, L.z);
+        ash.receiveShadow = true; scene.add(ash);
+      } else if (L.kind === 'gate') {
+        // the old road's gate, still standing over a road nobody walks
+        for (const side of [-1, 1]) {
+          const gx = L.x + side*3.2, gz = L.z;
+          const post = new M.Mesh(new M.BoxGeometry(1.4, 7.4, 1.4), mat(0x2b3140, .93));
+          post.position.set(gx, groundY(gx,gz) + 3.7, gz); post.castShadow = true; scene.add(post);
+          props.push({ x:gx, z:gz, r: .9 });
+        }
+        const lintel = new M.Mesh(new M.BoxGeometry(8.6, 1.3, 1.6), mat(0x333a4a, .93));
+        lintel.position.set(L.x, y + 8, L.z); lintel.castShadow = true; scene.add(lintel);
+        const gl = new M.PointLight(0xffc46a, .9, 20); gl.position.set(L.x, y + 5, L.z); scene.add(gl);
+      }
+    }
   }
 
   function buildForest(Z) {
-    for (let i=0;i<Z.trees;i++){
-      const p = randInCircle(WORLD_R+8);
+    const nTrees = Math.round(Z.trees * Q.trees);
+    for (let i=0;i<nTrees;i++){
+      const p = randInCircle(worldR+8);
       if (Math.hypot(p.x, p.z) < 12) continue;
       if (Math.hypot(p.x-20, p.z-20) < 11) continue;
       if (Math.abs(p.x - p.z) < 3 && p.x > 0) continue;
-      buildTree(p.x, p.z, rnd(.8, 1.7), Z.treePalette);
+      // conifers dominate; broadleaves cluster in the lower, wetter ground
+      const kind = groundY(p.x, p.z) < -.4 && Math.random() < .55 ? 'broadleaf' : 'conifer';
+      buildTree(p.x, p.z, rnd(.8, 1.9), Z.treePalette, kind);
     }
+    if (currentZone === 'forest') { buildLandmarks(); buildUndergrowth(Z); buildAtmosphere(Z); }
   }
 
   function buildGrotto(Z) {
     // stalagmites & stalactites
     for (let i=0;i<60;i++){
-      const p = randInCircle(WORLD_R+10);
+      const p = randInCircle(worldR+10);
       if (Math.hypot(p.x, p.z) < 10) continue;
       const h = rnd(1.5, 6), up = Math.random() < .7;
       const c = new M.Mesh(new M.ConeGeometry(rnd(.4,1.1), h, 6),
@@ -880,7 +1377,7 @@ const World = (() => {
     // landmark crystal clusters (first two fixed: spawn approach + tyrant lair)
     const clusterSpots = [{x:16,z:16},{x:0,z:-26}];
     for (let cl=0; cl<7; cl++){
-      const c0 = cl < 2 ? clusterSpots[cl] : randInCircle(WORLD_R-10);
+      const c0 = cl < 2 ? clusterSpots[cl] : randInCircle(worldR-10);
       if (cl >= 2 && Math.hypot(c0.x, c0.z) < 12) { cl--; continue; }
       for (let i=0;i<4;i++){
         const s = rnd(.7, 1.5);
@@ -895,14 +1392,14 @@ const World = (() => {
     }
     // bioluminescent cave growth
     for (let i=0;i<50;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       const col = Math.random()<.5 ? 0x3ad5c8 : 0x8a6aff;
       const sh = new M.Mesh(new M.ConeGeometry(rnd(.1,.22), rnd(.25,.5), 5),
         mat(col, .4, 0, col, 1.3));
       sh.position.set(p.x, .2, p.z); scene.add(sh);
     }
     // cave ceiling disc (dark canopy high above)
-    const ceil = new M.Mesh(new M.CircleGeometry(WORLD_R + 30, 32),
+    const ceil = new M.Mesh(new M.CircleGeometry(worldR + 30, 32),
       new M.MeshBasicMaterial({ color: 0x03040a, side: M.DoubleSide }));
     ceil.rotation.x = Math.PI/2; ceil.position.y = 22; scene.add(ceil);
   }
@@ -910,7 +1407,7 @@ const World = (() => {
   function buildCrater(Z) {
     // obsidian spikes
     for (let i=0;i<50;i++){
-      const p = randInCircle(WORLD_R+10);
+      const p = randInCircle(worldR+10);
       if (Math.hypot(p.x, p.z) < 10) continue;
       const h = rnd(2, 8);
       const c = new M.Mesh(new M.ConeGeometry(rnd(.4,1.2), h, 5),
@@ -931,40 +1428,140 @@ const World = (() => {
   }
 
   function buildRocksAndCrystals(Z) {
-    for (let i=0;i<Z.rocks;i++){
-      const p = randInCircle(WORLD_R+10);
-      const rock = new M.Mesh(new M.DodecahedronGeometry(rnd(.5,1.6), 0), mat(0x2e3440, .9, .08));
-      rock.position.set(p.x, rnd(.2,.6), p.z); rock.rotation.set(rnd(0,3),rnd(0,3),rnd(0,3));
-      rock.castShadow = rock.receiveShadow = true; scene.add(rock);
-      props.push({ x:p.x, z:p.z, r:1 });
-    }
+    // one instanced draw for every rock in the zone
+    const rockGeo = new M.DodecahedronGeometry(1, 0);
+    const rockMat = mat(0x2e3440, .9, .08);
+    instanced(rockGeo, rockMat, Z.rocks, (i, pos, e, sc) => {
+      const p = randInCircle(worldR + 10);
+      const rr = .5 + hash2(i, 83) * 1.1;
+      pos.set(p.x, groundY(p.x,p.z) + rr*.45, p.z);
+      e.set(hash2(i,89)*3, hash2(i,97)*3, hash2(i,101)*3);
+      sc.setScalar(rr);
+      // small rocks are scenery you walk past, not walls
+      if (rr > .8) props.push({ x:p.x, z:p.z, r: rr*.7 });
+    });
     const crystalCol = currentZone === 'grotto' ? [0x8a6aff, 0x5533cc]
       : currentZone === 'crater' ? [0xff6a3a, 0xcc3300] : [0x66ccff, 0x2288cc];
     for (let i=0;i<Z.crystals;i++){
-      const p = randInCircle(WORLD_R);
+      const p = randInCircle(worldR);
       const s = currentZone === 'grotto' ? rnd(.45,.9) : currentZone === 'crater' ? rnd(.5,1) : rnd(.4,.8);
       const c = new M.Mesh(new M.OctahedronGeometry(s, 0),
         mat(crystalCol[0], .2, .1, crystalCol[1], currentZone === 'forest' ? 1.6 : 1.05));
-      c.position.set(p.x, rnd(.8,1.4), p.z); scene.add(c);
-      const light = new M.PointLight(crystalCol[1], .7, 9); light.position.copy(c.position); scene.add(light);
-      props.push({ x:p.x, z:p.z, r:.7, crystal:c });
+      c.position.set(p.x, groundY(p.x,p.z) + rnd(.8,1.4), p.z); scene.add(c);
+      // emissive alone carries the glow; only every sixth crystal pays for a real light,
+      // because each one costs every lit fragment in the zone
+      if (i % 6 === 0) {
+        const light = new M.PointLight(crystalCol[1], .9, 12); light.position.copy(c.position); scene.add(light);
+      }
+      props.push({ x:p.x, z:p.z, r: s*.8, crystal:c });
     }
   }
 
+  /* The ruined shrine — the zone's landmark and the stage for two boss fights, so it
+     earns real construction: a cracked flagstone plaza, columns in four states of
+     collapse, a raised altar, carved ground runes and standing braziers. */
   function buildRuins() {
-    const ring = new M.Mesh(new M.CylinderGeometry(7.5, 8, .5, 24), mat(0x232835, .9, .05));
-    ring.position.y = .25; ring.receiveShadow = true; scene.add(ring);
-    for (let i=0;i<8;i++){
-      const a = i/8*Math.PI*2;
-      const h = i%2===0 ? rnd(4,5.5) : rnd(1.5,2.5);
-      const pil = new M.Mesh(new M.CylinderGeometry(.6,.7,h,8), mat(0x2c3242, .85, .06));
-      pil.position.set(Math.cos(a)*6.4, h/2+.5, Math.sin(a)*6.4);
-      pil.castShadow = true; scene.add(pil);
-      props.push({ x:Math.cos(a)*6.4, z:Math.sin(a)*6.4, r:.9 });
+    const stoneA = 0x2b3140, stoneB = 0x353c4c, stoneC = 0x242a36;
+    // --- plaza: laid flagstones, some tilted, some missing ---
+    const base = new M.Mesh(new M.CylinderGeometry(9.4, 9.9, .6, 32), mat(stoneC, .95, .04));
+    base.position.y = .0; base.receiveShadow = true; scene.add(base);
+    for (let ring = 1; ring <= 4; ring++) {
+      const r = 1.7 + ring * 1.85, n = 8 + ring * 5;
+      for (let i = 0; i < n; i++) {
+        if (Math.random() < .13) continue;                 // missing flagstones
+        const a = i/n*Math.PI*2 + rnd(-.03,.03);
+        const slab = new M.Mesh(new M.BoxGeometry(rnd(1.2,1.7), .16, rnd(1.1,1.6)),
+          mat(Math.random() < .5 ? stoneA : stoneB, .92, .05));
+        slab.position.set(Math.cos(a)*r + rnd(-.12,.12), .3 + rnd(-.03,.05), Math.sin(a)*r + rnd(-.12,.12));
+        slab.rotation.set(rnd(-.035,.035), a + rnd(-.09,.09), rnd(-.035,.035));
+        slab.receiveShadow = true; scene.add(slab);
+      }
     }
+    // --- carved ground runes, faintly lit ---
+    for (let i = 0; i < 12; i++) {
+      const a = i/12*Math.PI*2;
+      const rune = new M.Mesh(new M.PlaneGeometry(.5, .5),
+        new M.MeshBasicMaterial({ color: 0xff7a4d, transparent: true, opacity: .22,
+          blending: M.AdditiveBlending, depthWrite: false }));
+      rune.rotation.x = -Math.PI/2; rune.rotation.z = a;
+      rune.position.set(Math.cos(a)*4.3, .39, Math.sin(a)*4.3);
+      scene.add(rune);
+    }
+    // --- columns, in four states of ruin ---
+    for (let i = 0; i < 10; i++) {
+      const a = i/10*Math.PI*2 + .18;
+      const x = Math.cos(a)*7.1, z = Math.sin(a)*7.1;
+      const state = i % 4;                               // 0 whole · 1 snapped · 2 stump · 3 fallen
+      if (state === 3) {
+        const len = rnd(3.2, 4.8);
+        const shaft = new M.Mesh(new M.CylinderGeometry(.42, .46, len, 9), mat(stoneA, .92, .05));
+        shaft.position.set(x + Math.cos(a)*.7, .55, z + Math.sin(a)*.7);
+        shaft.rotation.set(Math.PI/2, 0, a + rnd(-.35,.35));
+        shaft.castShadow = true; scene.add(shaft);
+        // it broke into drums where it hit
+        for (let d = 0; d < 2; d++) {
+          const drum = new M.Mesh(new M.CylinderGeometry(.44, .44, rnd(.5,.9), 9), mat(stoneB, .92, .05));
+          drum.position.set(x + Math.cos(a+1.1)*rnd(1.6,2.8), .45, z + Math.sin(a+1.1)*rnd(1.6,2.8));
+          drum.rotation.set(Math.PI/2, 0, rnd(0,3));
+          drum.castShadow = true; scene.add(drum);
+        }
+        props.push({ x, z, r: .5 });
+        continue;
+      }
+      const h = state === 0 ? rnd(6.2, 7.4) : state === 1 ? rnd(3.2, 4.4) : rnd(.9, 1.6);
+      const plinth = new M.Mesh(new M.BoxGeometry(1.35, .34, 1.35), mat(stoneB, .92, .05));
+      plinth.position.set(x, .47, z); plinth.castShadow = true; scene.add(plinth);
+      // stacked drums read as masonry; one tall cylinder reads as a pipe
+      const drums = Math.max(1, Math.round(h / 1.15));
+      for (let d = 0; d < drums; d++) {
+        const dh = h / drums;
+        const drum = new M.Mesh(new M.CylinderGeometry(.44 - d*.012, .47 - d*.012, dh*.96, 10),
+          mat(d % 2 ? stoneA : stoneB, .92, .05));
+        drum.position.set(x + rnd(-.03,.03), .64 + dh*(d + .5), z + rnd(-.03,.03));
+        drum.rotation.y = rnd(0, 6);
+        drum.castShadow = true; scene.add(drum);
+      }
+      if (state === 0) {                                  // intact columns keep their capital
+        const cap = new M.Mesh(new M.BoxGeometry(1.15, .3, 1.15), mat(stoneB, .9, .06));
+        cap.position.set(x, .64 + h + .15, z); cap.castShadow = true; scene.add(cap);
+        // and a stub of the architrave they once carried
+        const arch = new M.Mesh(new M.BoxGeometry(1.5, .42, .7), mat(stoneA, .92, .05));
+        arch.position.set(x*.86, .64 + h + .5, z*.86); arch.rotation.y = a; arch.castShadow = true; scene.add(arch);
+      }
+      props.push({ x, z, r: .62 });
+    }
+    // --- the altar the Spirit Shard hangs over ---
+    const altar = new M.Mesh(new M.CylinderGeometry(1.5, 1.9, 1.1, 8), mat(stoneB, .88, .07));
+    altar.position.y = .85; altar.castShadow = altar.receiveShadow = true; scene.add(altar);
+    const altarTop = new M.Mesh(new M.CylinderGeometry(1.62, 1.5, .22, 8), mat(stoneA, .82, .09));
+    altarTop.position.y = 1.5; altarTop.castShadow = true; scene.add(altarTop);
+    props.push({ x: 0, z: 0, r: 1.7 });
+    // --- braziers: the only warm light in a cold wood ---
+    for (let i = 0; i < 4; i++) {
+      const a = i/4*Math.PI*2 + Math.PI/4;
+      const bx = Math.cos(a)*4.6, bz = Math.sin(a)*4.6;
+      const stand = new M.Mesh(new M.CylinderGeometry(.1, .18, 1.5, 6), mat(0x1e222c, .9, .3));
+      stand.position.set(bx, 1.05, bz); stand.castShadow = true; scene.add(stand);
+      const bowl = new M.Mesh(new M.CylinderGeometry(.42, .22, .38, 9), mat(0x2a2118, .8, .35));
+      bowl.position.set(bx, 1.95, bz); bowl.castShadow = true; scene.add(bowl);
+      const flame = new M.Mesh(new M.ConeGeometry(.26, .7, 7),
+        new M.MeshBasicMaterial({ color: 0xff9a4d, transparent: true, opacity: .85,
+          blending: M.AdditiveBlending, depthWrite: false }));
+      flame.position.set(bx, 2.42, bz); scene.add(flame);
+      const fl = new M.PointLight(0xff7a33, 1.5, 13); fl.position.set(bx, 2.5, bz); scene.add(fl);
+      torches.push({ flame, l: fl, base: 1.5, seed: rnd(0, 10) });
+      props.push({ x: bx, z: bz, r: .35 });
+    }
+    // --- the Spirit Shard, turning above the altar ---
     const stone = new M.Mesh(new M.OctahedronGeometry(1.1, 0), mat(0xff5533, .15, .2, 0xcc2200, 2.2));
     stone.position.set(0, 4.2, 0); scene.add(stone);
-    const l = new M.PointLight(0xff6633, 1.4, 22); l.position.set(0,5,0); scene.add(l);
+    const halo = new M.Mesh(new M.TorusGeometry(1.9, .06, 6, 32),
+      new M.MeshBasicMaterial({ color: 0xff8a4d, transparent: true, opacity: .5,
+        blending: M.AdditiveBlending, depthWrite: false }));
+    halo.rotation.x = Math.PI/2.4; halo.position.set(0, 4.2, 0); scene.add(halo);
+    scene.userData.shrineHalo = halo;
+    const l = new M.PointLight(0xff6633, 1.8, 26); l.position.set(0, 5, 0);
+    l.userData.alwaysOn = true; scene.add(l);
     scene.userData.spiritStone = stone;
   }
 
@@ -983,7 +1580,7 @@ const World = (() => {
   }
   function buildParticles(Z) {
     const geo = new M.BufferGeometry(); const n = Z.fireflies[1]; const pts = new Float32Array(n*3);
-    for (let i=0;i<n;i++){ const p = randInCircle(WORLD_R+10);
+    for (let i=0;i<n;i++){ const p = randInCircle(worldR+10);
       pts[i*3]=p.x; pts[i*3+1]=rnd(.5,7); pts[i*3+2]=p.z; }
     geo.setAttribute('position', new M.BufferAttribute(pts, 3));
     particles = new M.Points(geo, new M.PointsMaterial({ color:Z.fireflies[0], size:.22, map:getDotTexture(),
@@ -992,12 +1589,12 @@ const World = (() => {
   }
 
   const PORTAL_DEFS = {
-    forest: [ { x:-45, z:-45, col:0x8a6aff, to:'grotto', label:'Sunken Grotto',
+    forest: [ { x:-86, z:-86, col:0x8a6aff, to:'grotto', label:'Sunken Grotto',
                 lockCheck: () => !(RPG.player.flags && RPG.player.flags.heraldDead) },
               { x:27, z:27, col:0xffdd88, to:'town', label:'Mirewood Hollow', lockCheck: null },
-              { x:45, z:-18, col:0x66ccff, to:'coast', label:'Emberstrand Coast', lockCheck: null },
-              { x:-22, z:46, col:0xbfe8ff, to:'peaks', label:'Stormpeak Ascent',
-                lockCheck: () => !(RPG.player.flags && RPG.player.flags.melbuDead) } ],
+              { x:132, z:-52, col:0x66ccff, to:'coast', label:'Emberstrand Coast', lockCheck: null },
+              { x:-64, z:134, col:0xbfe8ff, to:'peaks', label:'Stormpeak Ascent',
+                lockCheck: () => !(RPG.player.flags && RPG.player.flags.malvethDead) } ],
     grotto: [ { x: 30, z: 30, col:0x3ad5c8, to:'forest', label:'Whisperwood', lockCheck: null },
               { x:-42, z:-42, col:0xff5533, to:'crater', label:'Star Crater',
                 lockCheck: () => !(RPG.player.flags && RPG.player.flags.starKey) },
@@ -1045,7 +1642,7 @@ const World = (() => {
       new M.MeshBasicMaterial({ color: w.col, transparent:true, opacity:.75 }));
     halo.rotation.x = Math.PI/2; halo.position.y = 3.4; g.add(halo);
     const light = new M.PointLight(w.col, 1.5, 16); light.position.y = 3.4; g.add(light);
-    g.position.set(w.x, 0, w.z);
+    g.position.set(w.x, groundY(w.x, w.z), w.z);
     scene.add(g);
     waystone = { zone: zoneId, x: w.x, z: w.z, group: g, core, halo, light, col: w.col };
     refreshWaystoneGlow();
@@ -1069,7 +1666,7 @@ const World = (() => {
     if (!waystoneAttuned(w.zone)) {
       waystoneFlags()[w.zone] = true;
       refreshWaystoneGlow();
-      AudioSys.play('dragoon');
+      AudioSys.play('ascend');
       toast(`✦ <b>Waystone attuned — ${ZONES[w.zone].name}</b><br><small>You can now travel here from any other stone.</small>`, 'var(--gold)');
       return true;
     }
@@ -1078,7 +1675,7 @@ const World = (() => {
   }
   /* The one place a zone change happens, whatever triggered it. */
   function travelTo(zoneId, arriveAtWaystone = false) {
-    AudioSys.play('dragoon');
+    AudioSys.play('ascend');
     buildZone(zoneId, false, arriveAtWaystone);
     toast(`— ${ZONES[zoneId].name} —`);
     if (zoneId === 'crater') setTimeout(spawnCraterBoss, 2500);
@@ -1105,7 +1702,7 @@ const World = (() => {
       new M.MeshBasicMaterial({ color: cfg.col, transparent:true, opacity:.75, side:M.DoubleSide }));
     mem.position.y = 2.2; g.add(mem);
     const pl = new M.PointLight(cfg.col, 1.4, 12); pl.position.y = 2.5; g.add(pl);
-    g.position.set(cfg.x, 0, cfg.z);
+    g.position.set(cfg.x, groundY(cfg.x, cfg.z), cfg.z);
     g.rotation.y = Math.atan2(-cfg.x, -cfg.z); // face world center
     scene.add(g);
     portals.push({ group:g, mem, ...cfg });
@@ -1243,7 +1840,7 @@ const World = (() => {
         const horn = new M.Mesh(new M.ConeGeometry(.08, .4, 5), m);
         horn.position.set(side*.3, 2.1, 0); horn.rotation.z = side*-.5; g.add(horn);
       }
-    } else if (n.includes('dragoon')) {
+    } else if (n.includes('ascend')) {
       const helm = new M.Mesh(new M.SphereGeometry(.32, 10, 8, 0, Math.PI*2, 0, Math.PI/2), m);
       helm.position.y = 1.95; g.add(helm);
       for (const side of [-1,1]) {
@@ -1441,7 +2038,7 @@ const World = (() => {
     const lvl = (RPG.player ? RPG.player.level : 1) + Z.levelMod;
     for (let i=0;i<Z.enemyCount;i++){
       const t = Z.enemies[rndi(0, Z.enemies.length-1)];
-      const p = randInCircle(WORLD_R-6);
+      const p = randInCircle(worldR-6);
       if (Math.hypot(p.x,p.z) < 16 || Math.hypot(p.x-20,p.z-20) < 12 || Math.hypot(p.x-24,p.z-24) < 12) { i--; continue; }
       addEnemy(t, p.x, p.z, lvl, Math.random() < .16); // 16% elite
     }
@@ -1449,7 +2046,7 @@ const World = (() => {
   function addEnemy(t, x, z, lvl, elite=false) {
     const scale = t.scale * (elite ? 1.35 : rnd(.9,1.1));
     const c3d = makeEnemyModel(t, scale);
-    c3d.group.position.set(x, 0, z); scene.add(c3d.group);
+    c3d.group.position.set(x, groundY(x, z), z); scene.add(c3d.group);
     if (elite) {
       const aura = new M.PointLight(0xffcc44, 1.1, 9); aura.position.y = 2; c3d.group.add(aura);
       const ringM = new M.Mesh(new M.TorusGeometry(.9*scale, .06, 6, 24),
@@ -1499,7 +2096,7 @@ const World = (() => {
   function spawnCraterBoss() {
     if (craterBossSpawned) return; craterBossSpawned = true;
     addEnemy(CRATER_BOSS, 0, -6, RPG.player.level + 6, false);
-    toast('⚠ The Fallen Star cracks open. MELBU FRAHMA rises.', 'var(--blood)');
+    toast('⚠ The Fallen Star cracks open. MALVETH rises.', 'var(--blood)');
     AudioSys.play('encounter');
   }
 
@@ -1518,14 +2115,24 @@ const World = (() => {
       const m = new M.Mesh(new M.CylinderGeometry(.3,.3,.15,10), mat(0xd4af37,.3,.9,0x6b5510,.5));
       m.position.y = .4; g.add(m);
     }
-    g.position.set(x, 0, z); scene.add(g);
+    g.position.set(x, groundY(x, z), z); scene.add(g);
     lootDrops.push({ group:g, item, gold, t:0 });
   }
 
   // ---------- INPUT ----------
+  /* Held keys are latched on keydown and cleared on keyup — which means any keyup we
+     never receive latches that key ON forever, and the hero runs until the tab closes.
+     That happens constantly in practice: alt-tab mid-stride, a modal taking focus, or
+     (worst of all) the game running in an iframe that loses focus while W is down.
+     So: clear every held key whenever we stop being the thing receiving input. */
+  function releaseKeys() { keys = {}; mouseDown = false; }
   function addEventListeners() {
     addEventListener('keydown', e => keys[e.code] = true);
     addEventListener('keyup', e => keys[e.code] = false);
+    addEventListener('blur', releaseKeys);
+    addEventListener('focus', releaseKeys);
+    addEventListener('contextmenu', releaseKeys);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
     addEventListener('mousedown', e => { if (e.target.id === 'game-canvas') mouseDown = true; });
     addEventListener('mouseup', () => mouseDown = false);
     addEventListener('mousemove', e => {
@@ -1541,8 +2148,8 @@ const World = (() => {
   }
 
   function collide(x, z) {
-    if (Math.hypot(x,z) > WORLD_R) return true;
-    for (const p of props) if (Math.hypot(x-p.x, z-p.z) < p.r + .5) return true;
+    if (Math.hypot(x,z) > worldR) return true;
+    for (const p of props) if (Math.hypot(x-p.x, z-p.z) < p.r + .35) return true;
     return false;
   }
 
@@ -1585,7 +2192,7 @@ const World = (() => {
     }
     g.add(mesh);
     const l = new M.PointLight(cfg.col, 1.2, 10); l.position.y = 2; g.add(l);
-    g.position.set(cfg.x, 0, cfg.z);
+    g.position.set(cfg.x, groundY(cfg.x, cfg.z), cfg.z);
     scene.add(g);
     interactables.push({ ...cfg, group: g, mesh, done: false });
   }
@@ -1639,7 +2246,7 @@ const World = (() => {
     if (keys.KeyA) move.sub(right); if (keys.KeyD) move.add(right);
     const moving = move.lengthSq() > 0;
     if (moving) {
-      move.normalize().multiplyScalar(8.5 * dt * (RPG.player?.speed || 1));
+      move.normalize().multiplyScalar(10.5 * dt * (RPG.player?.speed || 1));
       const nx = p.x + move.x, nz = p.z + move.z;
       if (!collide(nx, p.z)) p.x = nx;
       if (!collide(p.x, nz)) p.z = nz;
@@ -1654,6 +2261,7 @@ const World = (() => {
       player3d.armL.rotation.x = player3d.armR.rotation.x = 0;
       player3d.body.position.y = Math.sin(animT*2)*.03;
     }
+    p.y = groundY(p.x, p.z);
     if (player3d.refs && player3d.refs.cape) player3d.refs.cape.rotation.x = .18 + Math.sin(animT*3)*.06 + (moving?.25:0);
 
     const cx = p.x + Math.sin(camYaw)*Math.cos(camPitch)*CAM_DIST;
@@ -1689,6 +2297,7 @@ const World = (() => {
       else { vx = Math.cos(e.wanderA)*e.speed*.35; vz = Math.sin(e.wanderA)*e.speed*.35; }
       const nx = ep.x + vx*dt, nz = ep.z + vz*dt;
       if (!collide(nx, nz) || dist < 11) { ep.x = nx; ep.z = nz; }
+      ep.y = groundY(ep.x, ep.z);
       if (vx||vz) e.c3d.group.rotation.y = Math.atan2(vx, vz);
       if (e.c3d.wraith) { e.c3d.body.position.y = .3 + Math.sin(animT*2.2 + ep.x)*.18; e.c3d.group.rotation.y += dt*.4; }
       else e.c3d.body.position.y = Math.abs(Math.sin(animT*6 + ep.x))*.1;
@@ -1748,6 +2357,9 @@ const World = (() => {
     }
     particles.rotation.y += dt*.01;
     particles.material.opacity = .6 + Math.sin(animT*2.3)*.25;
+    autoQuality(dt);
+    updateLightBudget(dt);
+    updateWind(dt);
     updateLeaves(dt);
     updateNPCs(dt);
     updateGulls(dt);
@@ -1808,7 +2420,7 @@ const World = (() => {
       setTimeout(() => UI.stormVictory(), 1200);
       return;
     }
-    if (e.bossId === 'melbu') {
+    if (e.bossId === 'malveth') {
       setTimeout(() => UI.actComplete(), 1200);
       return;
     }
@@ -1819,7 +2431,7 @@ const World = (() => {
     if (!e.boss) setTimeout(() => {
       const Z = ZONES[currentZone];
       if (!Z.enemies.length) return; // safe havens spawn nothing
-      const p = randInCircle(WORLD_R-6);
+      const p = randInCircle(worldR-6);
       if (Math.hypot(p.x,p.z) > 16) addEnemy(Z.enemies[rndi(0, Z.enemies.length-1)], p.x, p.z,
         RPG.player.level + Z.levelMod, Math.random() < .16);
     }, 12000);
@@ -1835,7 +2447,7 @@ const World = (() => {
     ctx.clearRect(0,0,cv.width,cv.height);
     ctx.fillStyle = currentZone === 'grotto' ? '#0a0a14' : '#0a1210';
     ctx.beginPath(); ctx.arc(R,R,R-2,0,7); ctx.fill();
-    const s = (R-4) / (WORLD_R+10);
+    const s = (R-4) / (worldR+10);
     if (currentZone === 'forest') { ctx.fillStyle = '#525a6e'; ctx.beginPath(); ctx.arc(R, R, 5, 0, 7); ctx.fill(); }
     ctx.fillStyle = '#6a707e';
     for (const h of houses) ctx.fillRect(R + h.x*s - 3, R + h.z*s - 3, 6, 6);
@@ -1919,7 +2531,8 @@ const World = (() => {
 
   return { init, update, drawMinimap, setPlayerClass, removeEnemy, tryPortal, nearPortal, portalLocked,
     syncQuestObjects, removeInteract, tryInteract, nearInteract, spawnAmbush, makeEnemyModel, getDotTexture, nearNPC, refreshPlayerGear, buildWeaponMesh, currentWeaponType, buildShieldMesh, buildHelmMesh,
-    WAYSTONES, nearWaystone, useWaystone, waystoneAttuned, waystoneTravel, travelTo, ZONES,
+    WAYSTONES, nearWaystone, useWaystone, waystoneAttuned, waystoneTravel, travelTo, ZONES, releaseKeys,
+    setQuality, QUALITY, get quality(){ return qualityKey; },
     get scene(){ return scene; }, get camera(){ return camera; }, get renderer(){ return renderer; },
     get player3d(){ return player3d; }, get enemies(){ return enemies; },
     get zone(){ return currentZone; },

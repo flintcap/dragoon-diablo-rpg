@@ -50,7 +50,7 @@ const AudioSys = (() => {
     whoosh(){ noise(.5,.3,0,1400,'bandpass'); noise(.35,.2,.08,2400,'highpass'); },
     transform(){ tone(220,1.2,'sawtooth',.3,0,null,880); tone(440,1.4,'sine',.25,.1,null,1760); noise(1.0,.2,0,3000,'highpass'); },
     dissolve(){ noise(.8,.25,0,2000,'highpass'); tone(1200,.6,'sine',.15,0,null,300); },
-    dragoon(){ tone(110,.9,'sawtooth',.4,0,null,440); tone(220,.9,'sawtooth',.3,.15,null,880); noise(.8,.3,0,800); },
+    ascend(){ tone(110,.9,'sawtooth',.4,0,null,440); tone(220,.9,'sawtooth',.3,.15,null,880); noise(.8,.3,0,800); },
     levelup(){ [523,659,784,1046].forEach((f,i)=>tone(f,.35,'triangle',.3,i*.12)); },
     loot(){ tone(987,.12,'sine',.25); tone(1318,.2,'sine',.22,.09); },
     gold(){ tone(1567,.08,'square',.15); tone(2093,.12,'square',.12,.06); },

@@ -112,3 +112,12 @@ body.battle-mode #hotbar { display:none; }
 .bounty-prog-wrap { height:8px; background:#0a0f1c; border:1px solid #22304a; border-radius:4px; overflow:hidden; margin-bottom:6px; }
 .bounty-prog-fill { height:100%; background:linear-gradient(90deg,#8a6a1a,#f5d76e); transition:width .3s; }
 #btn-claim-bounty { margin-top:8px; }
+
+/* ---------- GRAPHICS QUALITY (pause menu) ---------- */
+#quality-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+#quality-row span { color:var(--dim); font-size:12px; letter-spacing:2px; margin-right:6px; }
+.qual-btn { padding:8px 18px; font-size:12px; letter-spacing:2px; color:var(--text);
+  background:linear-gradient(180deg,#16213c,#0b1120); border:1px solid var(--panel-edge);
+  border-radius:4px; transition:all .12s; }
+.qual-btn:hover { border-color:var(--gold); color:var(--gold-hi); }
+.qual-btn.active { border-color:var(--gold); color:var(--gold-hi); box-shadow:0 0 12px rgba(212,175,55,.3); }

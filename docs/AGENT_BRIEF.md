@@ -5,8 +5,8 @@ Champion enemies: ×1.35 scale, gold ring + aura, prefixed names, ×2.2 HP,
 ×1.5 damage, ×2 rewards, guaranteed item drop. 16% of spawns.
 
 ## Pass 6 — Companion
-Serah the Wingly: AI party member in every battle. Own turn after the player's:
-attacks with auto-additions (1–3 hits, crits), or casts Wingly Light (22% max-HP
+Serah the Sylvani: AI party member in every battle. Own turn after the player's:
+attacks with auto-additions (1–3 hits, crits), or casts Sylvan Light (22% max-HP
 heal) when the player drops below 35% HP.
 
 ## Pass 7 — Zones
@@ -26,7 +26,7 @@ rewards, and roadmap stubs. Live quest tracker HUD.
 - Boss-prep objective (Shadow Anchors → 85% damage shield on the Herald)
 - Relic hunt gating the Tyrant spawn; relic pickups roll ambush chance
 - Enrage phase (Tyrant, <30% HP, ×1.5 damage)
-- Two-phase Act boss (Melbu: Dragon Avatar at 50%, +40% damage, 15% heal,
+- Two-phase Act boss (Malveth: Dragon Avatar at 50%, +40% damage, 15% heal,
   red visual transformation, banner)
 - Star Key forge chain: Herald trophy + Tyrant trophy + Meteor Shard hunt
 

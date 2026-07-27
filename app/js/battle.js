@@ -1,13 +1,13 @@
-/* battle.js — Legend of Dragoon-style turn-based battles with timed Addition combos */
+/* battle.js — the Addition system-style turn-based battles with timed Addition combos */
 const Battle = (() => {
   const M = THREE;
   let scene, camera, active = false, enemy = null, playerModel = null, enemyModel = null, allyModel = null;
   let turn = 'player', animQueue = Promise.resolve(), spiritGainMult = 1;
-  let dragoonTurns = 0, enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
+  let ascendTurns = 0, enemyDebuff = { dmg: 0, miss: 0, turns: 0 };
   // Ailment carriers for the four party slots. The enemy carries its own `.ail` bag.
   let partyAil = { player:{ail:{}}, serah:{ail:{}}, kael:{ail:{}}, lyra:{ail:{}} };
   let playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
-  let ringState = null, arenaLight = null, dragoonWings = null;
+  let ringState = null, arenaLight = null, ascendWings = null;
   const arenaEls = { inlays: [], flames: [], ring: null, emblem: null, floorMat: null };
   // per-zone arena moods — every battlefield should feel like the place you fight in
   const ARENA_THEMES = {
@@ -114,7 +114,7 @@ const Battle = (() => {
     partyAil = { player:{ail:{}}, serah:{ail:{}}, kael:{ail:{}}, lyra:{ail:{}} };
     playerBuffs = { dodge: 0, defPct: 0, turns: 0, doubleHit: false, empower: false };
     RPG.player.cheatDeathUsed = false;
-    if (RPG.player.dragoonForm) endDragoon(true);
+    if (RPG.player.ascended) endStarforged(true);
 
     // clear old models
     if (playerModel) scene.remove(playerModel.group);
@@ -123,10 +123,10 @@ const Battle = (() => {
     playerModel = WorldBuild(RPG.CLASSES[RPG.player.cls].color, false, 1);
     playerModel.group.position.set(-4.5, .3, -1); playerModel.group.rotation.y = Math.PI/2;
     scene.add(playerModel.group);
-    // Serah the Wingly — AI companion
+    // Serah the Sylvani — AI companion
     allyModel = buildRig(0x9fd4ff, false, .88, true);
     allyModel.group.position.set(-5.5, .3, 2.2); allyModel.group.rotation.y = Math.PI/2;
-    // her Wingly bow
+    // her Sylvani bow
     if (allyModel.sword) allyModel.body.remove(allyModel.sword);
     const bow = new M.Group();
     const arc = new M.Mesh(new M.TorusGeometry(.5, .035, 6, 14, Math.PI),
@@ -232,7 +232,7 @@ const Battle = (() => {
     if (ui('addition-name')) ui('addition-name').classList.add('hidden');
     if (ui('enemy-status')) ui('enemy-status').classList.add('hidden');
     document.body.classList.remove('battle-mode');
-    if (RPG.player.dragoonForm) endDragoon(true);
+    if (RPG.player.ascended) endStarforged(true);
     if (victory) {
       World.removeEnemy(enemy);
       AudioSys.play('victory');
@@ -502,7 +502,7 @@ const Battle = (() => {
     shake(.6);
   }
 
-  // expanding shockwave ring — reused by beats, boss deaths, golem slams, dragoon cinematic
+  // expanding shockwave ring — reused by beats, boss deaths, golem slams, ascend cinematic
   function flashRing(pos, color, maxR=6, dur=500) {
     const ringM = new M.Mesh(new M.TorusGeometry(1, .1, 8, 40),
       new M.MeshBasicMaterial({ color, transparent:true, opacity:.95, blending:M.AdditiveBlending, depthWrite:false, side:M.DoubleSide }));
@@ -605,8 +605,8 @@ const Battle = (() => {
     } else mkBtn('⚔ Attack', 'Addition combo', () => doAttack());
     mkBtn('✦ Skills', 'MP cost', () => openSkills());
     mkBtn('✚ Items', 'potions', () => openItems());
-    if (isPlayer) mkBtn('🐉 Dragoon', p.dragoonForm ? 'DRAGOON ACTIVE' : `needs 100% (${Math.floor(p.spirit)}%)`,
-      () => doDragoon(), !(p.spirit >= 100 && !p.dragoonForm));
+    if (isPlayer) mkBtn('🐉 Starforged', p.ascended ? 'ASCENDED' : `needs 100% (${Math.floor(p.spirit)}%)`,
+      () => doStarforged(), !(p.spirit >= 100 && !p.ascended));
     mkBtn('🛡 Defend', 'half damage' + (isPlayer ? ', +spirit' : ''), () => doDefend());
     menu.classList.remove('hidden');
     ui('battle-submenu').classList.add('hidden');
@@ -641,7 +641,7 @@ const Battle = (() => {
   function actorModel() { return currentActor === 'player' ? playerModel : currentActor === 'serah' ? allyModel : currentActor === 'kael' ? kaelModel : lyraModel; }
   function actorStats() {
     const p = RPG.player;
-    if (currentActor === 'player') return { atk: p.attack, critCh: p.critChance, chainMax: RPG.CLASSES[p.cls].additionCount + (p.dragoonForm ? 2 : 0) };
+    if (currentActor === 'player') return { atk: p.attack, critCh: p.critChance, chainMax: RPG.CLASSES[p.cls].additionCount + (p.ascended ? 2 : 0) };
     const s = currentActor === 'serah' ? RPG.serahStats() : currentActor === 'kael' ? RPG.kaelStats() : RPG.lyraStats();
     return { atk: s.attack, critCh: s.critChance, chainMax: s.chainMax };
   }
@@ -660,7 +660,7 @@ const Battle = (() => {
         // chain scalar × the Addition's own weight × how well you know it × gear
         let dmg = atk * (0.45 + totalMult*0.42) * add.mult * mastery;
         if (isPlayer) dmg *= (1 + (p.additionBonus || 0));
-        if (isPlayer && p.dragoonForm) dmg *= 1.6;
+        if (isPlayer && p.ascended) dmg *= 1.6;
         dmg *= Combat.outgoingMult(partyAil[currentActor]);
         const crit = Math.random() < critCh;
         if (crit) dmg *= p.critMult;
@@ -758,9 +758,9 @@ const Battle = (() => {
       lunge(playerModel, enemyModel, .6);
       await wait(300);
       let mult = skill.mult + skill.per*rank;
-      if (skill.dragoonBoost && p.dragoonForm) mult *= skill.dragoonBoost;
+      if (skill.ascendBoost && p.ascended) mult *= skill.ascendBoost;
       let dmg = p.attack * p.spellPower * mult;
-      if (p.dragoonForm) dmg *= 1.6;
+      if (p.ascended) dmg *= 1.6;
       dmg *= Combat.outgoingMult(partyAil.player);
       let crit = skill.alwaysCrit || Math.random() < (p.critChance + (skill.critBonus||0));
       if (crit) dmg *= p.critMult;
@@ -795,8 +795,8 @@ const Battle = (() => {
       p.hp = Math.min(p.maxHp, p.hp + amt);
       elementalFX(isLyra ? 'fire' : 'ice', model); AudioSys.play('heal');
       UI.floaterAt(project(playerModel.group.position, 2.2), '+'+amt, 'perfect');
-      log(`${isSerah ? "Serah's Wingly Light" : isLyra ? "Lyra's Cauterize sears the wounds shut —" : "Kael's rally"} restores ${amt} HP.`);
-      // each healer clears what it is good for: Wingly light burns off a curse,
+      log(`${isSerah ? "Serah's Sylvan Light" : isLyra ? "Lyra's Cauterize sears the wounds shut —" : "Kael's rally"} restores ${amt} HP.`);
+      // each healer clears what it is good for: Sylvani light burns off a curse,
       // Lyra's cautery closes bleeding and boils out poison
       const cured = isSerah ? ['curse','chill'] : isLyra ? ['bleed','poison','chill'] : ['bleed'];
       const gone = cured.filter(id => Combat.hasAilment(partyAil.player, id));
@@ -870,13 +870,13 @@ const Battle = (() => {
     await wait(450); afterActorAction();
   }
 
-  // ---------- DRAGOON FORM ----------
-  async function doDragoon() {
+  // ---------- STARFORGED FORM ----------
+  async function doStarforged() {
     hideMenu();
     const p = RPG.player;
-    if (p.spirit < 100 || p.dragoonForm) return;
-    p.spirit = 0; p.dragoonForm = true; dragoonTurns = 4;
-    banner('🐉 DRAGOON TRANSFORMATION 🐉');
+    if (p.spirit < 100 || p.ascended) return;
+    p.spirit = 0; p.ascended = true; ascendTurns = 4;
+    banner('🐉 STARFORGED ASCENSION 🐉');
     AudioSys.play('transform');
     // --- cinematic: camera pushes in, a pillar of spirit fire erupts ---
     const baseFov = camera.fov;
@@ -911,9 +911,9 @@ const Battle = (() => {
     }
     shake(1.4);
     await wait(700);
-    AudioSys.play('dragoon');
+    AudioSys.play('ascend');
     // wings — layered glowing energy feathers
-    dragoonWings = new M.Group();
+    ascendWings = new M.Group();
     for (const side of [-1,1]) {
       const wing = new M.Group();
       for (let f=0; f<3; f++) {
@@ -930,23 +930,23 @@ const Battle = (() => {
       }
       wing.position.set(side*.3, 1.55, -.35);
       wing.rotation.y = side*.35;
-      dragoonWings.add(wing);
+      ascendWings.add(wing);
     }
-    playerModel.group.add(dragoonWings);
-    const glow = new M.PointLight(0x66ccff, 2.5, 10); glow.position.y = 2; glow.name = 'dragoonGlow';
+    playerModel.group.add(ascendWings);
+    const glow = new M.PointLight(0x66ccff, 2.5, 10); glow.position.y = 2; glow.name = 'ascendGlow';
     playerModel.group.add(glow);
     playerModel.group.traverse(o => { if (o.material && o.material.emissive) { o.userData.oldEm = o.material.emissive.getHex(); o.material.emissive.setHex(0x2266aa); o.material.emissiveIntensity = .6; } });
-    log('The Dragoon Spirit ignites! All damage +60% for 4 turns!');
+    log('The Starheart ignites! All damage +60% for 4 turns!');
     await wait(1500);
     showMenu();
   }
-  function endDragoon(silent) {
-    const p = RPG.player; p.dragoonForm = false;
-    if (dragoonWings) { playerModel.group.remove(dragoonWings); dragoonWings = null; }
-    const glow = playerModel.group.getObjectByName('dragoonGlow');
+  function endStarforged(silent) {
+    const p = RPG.player; p.ascended = false;
+    if (ascendWings) { playerModel.group.remove(ascendWings); ascendWings = null; }
+    const glow = playerModel.group.getObjectByName('ascendGlow');
     if (glow) playerModel.group.remove(glow);
     playerModel.group.traverse(o => { if (o.material && o.material.emissive && o.userData.oldEm !== undefined) { o.material.emissive.setHex(o.userData.oldEm); o.material.emissiveIntensity = .3; delete o.userData.oldEm; } });
-    if (!silent) log('The Dragoon form fades…');
+    if (!silent) log('The Starforged form fades…');
   }
 
   // ---------- TARGET DAMAGE HELPERS ----------
@@ -1049,7 +1049,7 @@ const Battle = (() => {
   }
   // What school this thing swings with — wraiths are never really hitting you with a fist.
   const KIND_ELEMENT = { wraith:'arcane', wolf:'phys', golem:'phys', humanoid:'phys' };
-  const BOSS_ELEMENT = { stormcaller:'lightning', tyrant:'ice', warden:'phys', herald:'arcane', melbu:'arcane' };
+  const BOSS_ELEMENT = { stormcaller:'lightning', tyrant:'ice', warden:'phys', herald:'arcane', malveth:'arcane' };
   function enemyElement() {
     return (enemy.bossId && BOSS_ELEMENT[enemy.bossId]) || KIND_ELEMENT[enemy.kind] || 'phys';
   }
@@ -1162,7 +1162,7 @@ const Battle = (() => {
         enemy.dmg = Math.round(enemy.dmg * enemy.phase2.dmgMult);
         enemy.hpCur = Math.min(enemy.maxHp, enemy.hpCur + Math.round(enemy.maxHp * enemy.phase2.healPct));
         banner(enemy.phase2.name);
-        AudioSys.play('dragoon');
+        AudioSys.play('ascend');
         enemyModel.group.traverse(o => { if (o.material && o.material.emissive !== undefined) { o.material.emissive = new M.Color(enemy.phase2.color); o.material.emissiveIntensity = .8; } });
         const aura2 = new M.PointLight(0xff2222, 2.2, 16); aura2.position.y = 3; enemyModel.group.add(aura2);
         enemyModel.group.scale.multiplyScalar(1.15);
@@ -1253,7 +1253,7 @@ const Battle = (() => {
     if (playerBuffs.turns > 0 && --playerBuffs.turns === 0) { playerBuffs.dodge = 0; playerBuffs.defPct = 0; }
     if (partyDodgeTurns > 0 && --partyDodgeTurns === 0) partyDodge = 0;
     if (partyDefTurns > 0 && --partyDefTurns === 0) partyDef = 0;
-    if (p.dragoonForm && --dragoonTurns === 0) endDragoon(false);
+    if (p.ascended && --ascendTurns === 0) endStarforged(false);
     p.spirit = Math.min(100, p.spirit + 3);
     UI.refreshHUD();
     await wait(500);
@@ -1360,7 +1360,7 @@ const Battle = (() => {
       if (!rank) continue;
       const s = RPG.getSkill(id);
       if (s.type === 'passive') continue;
-      if (s.dragoonOnly && !p.dragoonForm) continue;
+      if (s.ascendOnly && !p.ascended) continue;
       any = true;
       const b = document.createElement('button');
       b.className = 'battle-btn';
@@ -1444,7 +1444,7 @@ const Battle = (() => {
     if (playerModel) playerModel.body.position.y = Math.sin(t*2.2)*.04;
     if (allyModel) allyModel.body.position.y = Math.sin(t*2.6+.7)*.05;
     if (enemyModel && enemy.hpCur > 0) enemyModel.body.position.y = Math.sin(t*2.8+1)*.06;
-    if (dragoonWings) dragoonWings.rotation.x = Math.sin(t*6)*.25;
+    if (ascendWings) ascendWings.rotation.x = Math.sin(t*6)*.25;
     scene.userData.embers.rotation.y += dt*.05;
     arenaLight.intensity = 1 + Math.sin(t*3)*.25;
     // fx particles

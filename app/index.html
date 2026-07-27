@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dragoons of the Fallen Star</title>
+<title>Starforged — of the Fallen Star</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/polish.css">
@@ -14,12 +14,12 @@
 <!-- ============ TITLE SCREEN ============ -->
 <div id="title-screen" class="screen">
   <div class="title-emblem"></div>
-  <h1 class="game-title">DRAGOONS<span>of the</span>FALLEN STAR</h1>
-  <p class="title-sub">A Legend of Dragoon × Diablo II hybrid</p>
+  <h1 class="game-title">STARFORGED<span>of the</span>FALLEN STAR</h1>
+  <p class="title-sub">Timed-combo duels · deep affix loot · a four-act descent</p>
   <div id="class-select">
     <div class="class-card" data-class="knight">
       <div class="class-portrait knight"></div>
-      <h3>Dragoon Knight</h3>
+      <h3>Starforged Knight</h3>
       <p>Master of the Addition blade. High Strength, devastating timed combos.</p>
       <div class="class-stats"><span>STR ★★★★</span><span>VIT ★★★</span><span>ENE ★★</span></div>
     </div>
@@ -37,7 +37,7 @@
     </div>
   </div>
   <button id="btn-start" class="btn-primary" disabled>SELECT YOUR HERO</button>
-  <p class="title-hint">WASD move · Mouse orbit · Space = Addition timing · C/K/I/J menus</p>
+  <p class="title-hint">WASD move · Mouse orbit · Space = Addition timing · E interact · M waystones · C/K/I/J menus</p>
 </div>
 
 <!-- ============ INTRO STORY ============ -->
@@ -46,12 +46,13 @@
     <h2 class="intro-act">ACT I</h2>
     <h3 class="intro-name">THE FALLEN STAR</h3>
     <p class="intro-text">The night the Star fell, the Whisperwood changed. Fiends crawled out of the dark
-    between the trees, and the old shrine began to whisper a name — <b>Melbu Frahma</b>.</p>
-    <p class="intro-text">You wake at the forest's edge with a burning stone fused to your chest: a
-    <b>Dragoon Spirit</b>. Beside you kneels <b>Serah</b>, a Wingly scout with silver eyes.</p>
+    between the trees, and the old shrine began to whisper a name — <b>Malveth, the Hollow King</b>.</p>
+    <p class="intro-text">They carried you into <b>Mirewood Hollow</b> half-dead, with a burning stone
+    fused to your chest: a <b>Starheart</b>. Those it does not kill, it remakes — the <b>Starforged</b>.
+    Beside your cot waits <b>Serah</b>, a Sylvani scout with silver eyes.</p>
     <p class="intro-text intro-quote">"Move or die. The fiends first — questions after."</p>
   </div>
-  <button id="btn-intro-begin" class="btn-primary">ENTER THE WHISPERWOOD</button>
+  <button id="btn-intro-begin" class="btn-primary">WAKE IN MIREWOOD HOLLOW</button>
 </div>
 
 <!-- ============ QUEST LOG ============ -->
@@ -71,7 +72,7 @@
       <div class="bar hp-bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
       <div class="bar mp-bar"><div id="mp-fill"></div><span id="mp-text"></span></div>
       <div class="bar xp-bar"><div id="xp-fill"></div><span id="level-text">Lv 1</span></div>
-      <div class="bar sp-bar" title="Spirit — fills in battle, unleash Dragoon form at 100%"><div id="sp-fill"></div><span>SPIRIT</span></div>
+      <div class="bar sp-bar" title="Spirit — fills in battle, unleash Starforged form at 100%"><div id="sp-fill"></div><span>SPIRIT</span></div>
     </div>
   </div>
   <div id="hotbar"></div>
@@ -127,7 +128,7 @@
     <button class="battle-btn" data-action="attack">⚔ Attack <small>Addition combo</small></button>
     <button class="battle-btn" data-action="skills">✦ Skills <small>MP cost</small></button>
     <button class="battle-btn" data-action="items">✚ Items <small>potions</small></button>
-    <button class="battle-btn" data-action="dragoon" id="btn-dragoon">🐉 Dragoon <small id="dragoon-req">needs 100% spirit</small></button>
+    <button class="battle-btn" data-action="ascend" id="btn-ascend">🐉 Starforged <small id="ascend-req">needs 100% spirit</small></button>
     <button class="battle-btn" data-action="defend">🛡 Defend <small>half damage, +spirit</small></button>
   </div>
   <div id="battle-submenu" class="hidden"></div>
@@ -189,6 +190,12 @@
 <!-- ============ PAUSE ============ -->
 <div id="pause-menu" class="screen hidden">
   <h2>PAUSED</h2>
+  <div id="quality-row">
+    <span>Graphics</span>
+    <button class="qual-btn" data-q="low">LOW</button>
+    <button class="qual-btn" data-q="medium">MEDIUM</button>
+    <button class="qual-btn" data-q="high">HIGH</button>
+  </div>
   <button class="btn-primary" id="btn-resume">RESUME</button>
   <button class="btn-secondary" id="btn-save">SAVE GAME</button>
   <button class="btn-secondary" id="btn-quit">QUIT TO TITLE</button>

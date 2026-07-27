@@ -26,7 +26,7 @@ async def main():
         await page.screenshot(path=f'{OUT}/90_river.png')
 
         # coast
-        await page.evaluate("() => { World.player3d.group.position.set(45, 0, -18); }")
+        await page.evaluate("() => { World.player3d.group.position.set(132, 0, -52); }")
         await page.wait_for_timeout(1500)
         await page.keyboard.press('e'); await page.wait_for_timeout(3000)
         print('ZONE:', await page.evaluate("() => World.zone"))

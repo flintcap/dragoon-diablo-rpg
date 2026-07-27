@@ -1,12 +1,12 @@
-# Dragoon × Diablo II — Hybrid RPG (Three.js)
+# Starforged — Hybrid Action RPG (Three.js)
 
 ## Vision
 A browser RPG fusing two design pillars:
 
 | Pillar | Source | What we take |
 |---|---|---|
-| Combat | Legend of Dragoon | Turn-based party battles, timed **Addition** combo system (press at the shrinking-ring moment to chain hits), Dragoon-style special attacks, cinematic battle camera |
-| Character depth | Diablo II (modern ARPG standard) | Attributes (STR/DEX/VIT/ENE), branching skill trees, item rarity tiers (Normal/Magic/Rare/Unique), random affixes, equipment slots, loot drops, potions, gold, leveling |
+| Combat | Original | Turn-based party battles, timed **Addition** combo system (press at the shrinking-ring moment to chain hits), Starforged special attacks, cinematic battle camera |
+| Character depth | Modern ARPG standard | Attributes (STR/DEX/VIT/ENE), branching skill trees, item rarity tiers (Normal/Magic/Rare/Unique), random affixes, equipment slots, loot drops, potions, gold, leveling |
 
 ## Tech
 - Three.js (bundled locally — no CDN dependency at runtime)
@@ -19,8 +19,8 @@ A browser RPG fusing two design pillars:
 - [x] Roaming enemies with aggro radius → battle transition
 - [x] Battle scene: arena, turn order, attack/defend/skills/items
 - [x] Addition system: timed ring minigame, multi-hit chains, damage scaling per successful beat, failure ends the chain
-- [x] Dragoon Spirit (special meter) → Dragoon form transformation with enhanced skills
-- [x] Classes: Dragoon Knight (STR), Shadow Rogue (DEX), Storm Sorceress (ENE)
+- [x] Starheart (special meter) → Starforged form transformation with enhanced skills
+- [x] Classes: Starforged Knight (STR), Shadow Rogue (DEX), Storm Sorceress (ENE)
 - [x] Attributes: STR/DEX/VIT/ENE with derived stats (dmg, crit, HP, MP, defense)
 - [x] Skill trees: 3 branches per class, point investment, unlock tiers by level
 - [x] Items: 4 rarity tiers, affix pools (prefix+suffix), weapons/armor/charms/potions

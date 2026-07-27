@@ -3,7 +3,7 @@ from playwright.async_api import async_playwright
 
 # Full Act I quest-chain end-to-end test:
 # intro → q1 shard → q2 crystal riddle (wrong+right order) → q3 anchors + shielded herald
-# → grotto relics → tyrant (enrage) → star key → crater → Melbu two-phase → act complete.
+# → grotto relics → tyrant (enrage) → star key → crater → Malveth two-phase → act complete.
 URL = 'http://localhost:8123/index.html'
 OUT = 'shots'
 
@@ -41,10 +41,17 @@ async def ensure_world(page, max_rounds=12):
         await attack_round(page)
     return await page.evaluate("() => Main.state === 'world'")
 
-async def press_e(page):
-    await ensure_world(page)
-    await page.keyboard.press('e'); await page.wait_for_timeout(2200)
-    await ensure_world(page)
+async def press_e(page, tries=3):
+    """Interact, retrying past ambushes — a roamer can aggro between the walk and the
+    keypress, and E is ignored while a battle owns the input."""
+    for _ in range(tries):
+        await ensure_world(page)
+        before = await page.evaluate("() => World.zone + '|' + JSON.stringify(RPG.player.flags||{})")
+        await page.keyboard.press('e'); await page.wait_for_timeout(2200)
+        await ensure_world(page)
+        after = await page.evaluate("() => World.zone + '|' + JSON.stringify(RPG.player.flags||{})")
+        if after != before:
+            return
 
 async def engage_boss(page, bossId, rounds=20):
     """Keep engaging until the named boss is dead, handling ambush fights on the way."""
@@ -99,8 +106,8 @@ async def main():
         print('Q1 done:', await page.evaluate("() => !!(RPG.player.flags||{}).done_q1"))
 
         # Q2 wrong order then correct
-        await tp(page, 35, 10); await press_e(page)
-        for x,z in [(15,-38),(35,10),(-20,40)]:
+        await tp(page, 96, 24); await press_e(page)
+        for x,z in [(44,-102),(96,24),(-58,106)]:
             await tp(page, x, z); await press_e(page)
         print('Q2 done:', await page.evaluate("() => !!(RPG.player.flags||{}).done_q2"))
         await page.screenshot(path=f'{OUT}/53_trial_done.png')
@@ -115,7 +122,7 @@ async def main():
         print('Q3 done:', await page.evaluate("() => !!(RPG.player.flags||{}).done_q3"))
 
         # Q4 grotto + relics
-        await tp(page, -45, -45); await press_e(page)
+        await tp(page, -86, -86); await press_e(page)
         print('ZONE:', await page.evaluate("() => World.zone"))
         for x,z in [(20,-15),(-25,10),(-10,-35),(35,25)]:
             await tp(page, x, z); await press_e(page)
@@ -126,26 +133,26 @@ async def main():
         print('TYRANT dead:', await engage_boss(page, 'tyrant'))
         print('Q5 done:', await page.evaluate("() => !!(RPG.player.flags||{}).done_q5"))
 
-        # Q6 meteor shard + crater + Melbu (two-phase)
+        # Q6 meteor shard + crater + Malveth (two-phase)
         await tp(page, 30, 30); await press_e(page)
         await tp(page, 12, 14); await press_e(page)
         print('STAR KEY:', await page.evaluate("() => !!(RPG.player.flags||{}).starKey"))
-        await tp(page, -45, -45); await press_e(page)
+        await tp(page, -86, -86); await press_e(page)
         await tp(page, -42, -42); await press_e(page)
         print('ZONE:', await page.evaluate("() => World.zone"))
         await page.wait_for_timeout(3500)
-        print('MELBU spawned:', await page.evaluate("() => World.enemies.some(e=>e.bossId==='melbu')"))
+        print('MELBU spawned:', await page.evaluate("() => World.enemies.some(e=>e.bossId==='malveth')"))
         await page.screenshot(path=f'{OUT}/55_crater.png')
         await buff(page, 500)
         for r in range(20):
-            dead = await page.evaluate("() => !!(RPG.player.flags||{}).melbuDead")
+            dead = await page.evaluate("() => !!(RPG.player.flags||{}).malvethDead")
             if dead: break
             ok = page.locator('#btn-results-ok')
             if await ok.is_visible(): await ok.click(); await page.wait_for_timeout(1500); continue
             st = await page.evaluate("() => Main.state")
             if st == 'world':
                 await page.evaluate("""() => {
-                  const b = World.enemies.find(e => e.bossId === 'melbu');
+                  const b = World.enemies.find(e => e.bossId === 'malveth');
                   if (b) { const pp = World.player3d.group.position;
                     pp.x = b.c3d.group.position.x + 1.2; pp.z = b.c3d.group.position.z + 1.2; }
                 }""")
@@ -157,7 +164,7 @@ async def main():
                 main.phase2_shot = True
                 print('PHASE 2 REACHED')
             await attack_round(page)
-        print('MELBU dead:', await page.evaluate("() => !!(RPG.player.flags||{}).melbuDead"))
+        print('MELBU dead:', await page.evaluate("() => !!(RPG.player.flags||{}).malvethDead"))
         await page.wait_for_timeout(4000)
         await page.screenshot(path=f'{OUT}/57_actcomplete.png')
         print('Q final:', await quest(page))

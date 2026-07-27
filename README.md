@@ -1,7 +1,7 @@
-# Dragoons of the Fallen Star
+# Starforged of the Fallen Star
 
-A browser RPG that fuses **Legend of Dragoon's** turn-based **Addition** combat
-(timed button presses chain attack combos, Dragoon Spirit transformation) with
+A browser RPG that is built on timed-press **Addition** combat
+(timed button presses chain attack combos, Starheart transformation) with
 **Diablo II's** character depth (attributes, branching skill trees, rarity-tiered
 affix loot, equipment slots) — built in Three.js, structured as a linear
 **4-Act storyline**. **Act I is fully playable**, with a post-Act endgame zone.
@@ -53,7 +53,7 @@ Six main quests with unique mechanics, three side quests, four mini-bosses and
 a two-phase Act boss:
 
 1. **Awakening** — slay 3 fiends, then claim the Spirit Shard at the shrine
-2. **The Wingly's Trial** — riddle puzzle: attune 3 crystals in the verse's order
+2. **The Sylvani's Trial** — riddle puzzle: attune 3 crystals in the verse's order
    (wrong order resets; each attunement ambushes you)
 3. **Herald of Shadows** — the Herald is 85%-shielded until you destroy 3 Shadow
    Anchors; then the mini-boss fight (unlocks **Kael the Lancer**, 3rd party member)
@@ -61,7 +61,7 @@ a two-phase Act boss:
    surfaces when all 4 are found
 5. **The Tyrant** — mini-boss with an enrage phase below 30% HP
 6. **The Fallen Star** — forge the Star Key, enter the crater, destroy
-   **MELBU FRAHMA** — two-phase Act boss (shadow form → Dragon Avatar at 50% HP)
+   **MALVETH** — two-phase Act boss (shadow form → Dragon Avatar at 50% HP)
 
 Side quests: **Elite Hunter**, **Hoarder**, and **Echoes of the Storm** — the
 post-Act ascent of Stormpeak: attune 3 Storm Sigils *in any order* (each
@@ -75,8 +75,8 @@ party-wide **Chain Lightning** unique, guaranteed Unique drop).
   PERFECT window is barely half as wide.
   Chains **level from use** (Mastery 1–5, +7% damage a level), switch as a free
   action mid-battle, and a chain that lands every beat detonates its finisher.
-  Plus the Spirit meter and Dragoon transformation (+60% dmg, +2 beats,
-  Dragoon-only skills, energy wings)
+  Plus the Spirit meter and Starforged transformation (+60% dmg, +2 beats,
+  Starforged-only skills, energy wings)
 - **Elemental affinity:** every hit has a school, and affinity multiplies through
   **family × zone × boss** — wraiths burn but shrug off arcane, golems resist
   steel but conduct lightning, the crater is fireproof, the Stormcaller is all
@@ -88,7 +88,7 @@ party-wide **Chain Lightning** unique, guaranteed Unique drop).
 - **Resistances:** four elemental ward affixes plus all-resist and
   Addition-damage rolls, three uniques built around them, 75% cap, allies
   inherit half the leader's wards
-- **Full party control:** you, **Serah** (bow, Wingly Light heal, Tailwind),
+- **Full party control:** you, **Serah** (bow, Sylvan Light heal, Tailwind),
   **Kael** (spear, Bulwark, Dragonslayer) and **Lyra** (fire caster, Cauterize,
   Immolation) each take controlled turns with their own chains, skills and
   KO/revive — and their own equipment slots
@@ -98,7 +98,7 @@ party-wide **Chain Lightning** unique, guaranteed Unique drop).
   stats, Normal/Magic/Rare/Unique loot with prefix+suffix affixes, 8+2 equip
   slots, elites/champions, magic/gold find, life leech, potions, save/load
 - **Gear on characters:** equipped weapons (sword/dagger/staff/spear), shields,
-  tiered helms (cap → great helm → winged dragoon helm), boots/armor rarity
+  tiered helms (cap → great helm → winged Starforged helm), boots/armor rarity
   tints — all live on the 3D model, in and out of battle
 - **World life:** procedural texture factory (grass/snow/stone/wood/water…),
   day-mood lighting per zone, falling leaves, gulls, torch flicker, cave drips,

@@ -21,7 +21,7 @@ const Main = (() => {
   // ============================================================
   const MAIN_QUESTS = [
     { id:'q1', num:'I', title:'Awakening',
-      story: `The Fallen Star tore the heavens and sank beyond the wood. You wake at the forest's edge with the Dragoon Spirit fused to your chest — and the Whisperwood crawling with corrupted fiends. Serah, a Wingly scout, hauls you upright: "Move or die. The fiends first — questions after."`,
+      story: `The Fallen Star tore the heavens and sank beyond the wood. You wake at the forest's edge with the Starheart fused to your chest — and the Whisperwood crawling with corrupted fiends. Serah, a Sylvani scout, hauls you upright: "Move or die. The fiends first — questions after."`,
       objectives: [
         { text:'Slay fiends of the Whisperwood', prog:()=>[Math.min(3,RPG.player.kills),3] },
         { text:'Claim the Spirit Shard at the ruined shrine', prog:()=>[F('spiritShard')?1:0,1] },
@@ -36,27 +36,27 @@ const Main = (() => {
             AudioSys.play('loot'); toast('✦ Spirit Shard claimed — <b>+20% spirit</b>'); UI.refreshHUD(); } },
       ] },
 
-    { id:'q2', num:'II', title:"The Wingly's Trial",
-      story:`Serah leads you to three ancient attunement crystals, half-buried in the wood. "The old trial of the Dragon Knights. Attune them in the order the verse commands and the Spirit will open to you. Guess wrong — and the trial resets." The verse reads: <i>"First the STAR that fell from grace, then the MOON that watched it fall, and last the EMBER left behind."</i>`,
+    { id:'q2', num:'II', title:"The Sylvani's Trial",
+      story:`Serah leads you to three ancient attunement crystals, half-buried in the wood. "The old trial of the Star Knights. Attune them in the order the verse commands and the Spirit will open to you. Guess wrong — and the trial resets." The verse reads: <i>"First the STAR that fell from grace, then the MOON that watched it fall, and last the EMBER left behind."</i>`,
       objectives: [
         { text:'Attune the crystals — in the verse\u2019s order', prog:()=>[Math.min(3,Fget('attuned')),3], hint:'Verse: "First the STAR… then the MOON… last the EMBER."' },
       ],
       rewards:{ xp:90, gold:40, spirit:25 },
       doneBeat:'All three crystals sing in harmony. Serah smiles for the first time: "You felt it, didn\'t you? The Spirit listening."',
       objects:[
-        { when:()=>true, zone:'forest', id:'c_star', x:15, z:-38, col:0xcc88ff, label:'Attune the Star Crystal', kind:'attune',
+        { when:()=>true, zone:'forest', id:'c_star', x:44, z:-102, col:0xcc88ff, label:'Attune the Star Crystal', kind:'attune',
           onUse:(it)=>attuneCrystal('c_star', 'Star') },
-        { when:()=>true, zone:'forest', id:'c_moon', x:35, z:10, col:0x7ec8ff, label:'Attune the Moon Crystal', kind:'attune',
+        { when:()=>true, zone:'forest', id:'c_moon', x:96, z:24, col:0x7ec8ff, label:'Attune the Moon Crystal', kind:'attune',
           onUse:(it)=>attuneCrystal('c_moon', 'Moon') },
-        { when:()=>true, zone:'forest', id:'c_ember', x:-20, z:40, col:0xff9a4d, label:'Attune the Ember Crystal', kind:'attune',
+        { when:()=>true, zone:'forest', id:'c_ember', x:-58, z:106, col:0xff9a4d, label:'Attune the Ember Crystal', kind:'attune',
           onUse:(it)=>attuneCrystal('c_ember', 'Ember') },
       ] },
 
     { id:'q3', num:'III', title:'Herald of Shadows',
-      story:`At the shrine, Melbu Frahma's will has raised a Herald — a knight-shaped hole in the world. It is shielded by three <b>Shadow Anchors</b> driven into the shrine stones. Break the anchors. Then break the Herald. Serah: "It will know what you do. It will send pieces of itself to stop you."`,
+      story:`At the shrine, Malveth's will has raised a Herald — a knight-shaped hole in the world. It is shielded by three <b>Shadow Anchors</b> driven into the shrine stones. Break the anchors. Then break the Herald. Serah: "It will know what you do. It will send pieces of itself to stop you."`,
       objectives: [
         { text:'Destroy the Shadow Anchors at the shrine', prog:()=>[Math.min(3,Fget('anchorsDestroyed')),3] },
-        { text:'Slay <b>Melbu\'s Herald</b>', prog:()=>[F('heraldDead')?1:0,1] },
+        { text:'Slay <b>Malveth\'s Herald</b>', prog:()=>[F('heraldDead')?1:0,1] },
       ],
       rewards:{ xp:150, gold:80, item:'magic' },
       doneBeat:'The Herald folds like burnt paper. Somewhere below, stone grinds open — the way to the Grotto is free.',
@@ -70,7 +70,7 @@ const Main = (() => {
       ] },
 
     { id:'q4', num:'IV', title:'Drowned Relics',
-      story:`Below the shrine, the Sunken Grotto breathes cold violet dark. Four relics of the old Dragoon order lie drowned in it. The Tyrant of the Deep guards them jealously — take them all, and it will have no choice but to surface. Serah: "It watches through the water. Expect teeth with every relic."`,
+      story:`Below the shrine, the Sunken Grotto breathes cold violet dark. Four relics of the old Starforged order lie drowned in it. The Tyrant of the Deep guards them jealously — take them all, and it will have no choice but to surface. Serah: "It watches through the water. Expect teeth with every relic."`,
       objectives: [
         { text:'Enter the Sunken Grotto (violet portal, southwest)', prog:()=>[F('enteredGrotto')?1:0,1] },
         { text:'Recover the Drowned Relics', prog:()=>[Math.min(4,Fget('relics')),4] },
@@ -98,16 +98,16 @@ const Main = (() => {
       objects:[] },
 
     { id:'q6', num:'VI', title:'The Fallen Star',
-      story:`Herald's ember, Tyrant's trophy — one thing is still missing: a fragment of the Star itself. A meteor shard fell near the place you woke. Take it, and the Star Key is forged. Then walk into the crater and <b>end Melbu Frahma</b>. Serah: "Whatever stands up in that crater — it will not be a herald. It will be him."`,
+      story:`Herald's ember, Tyrant's trophy — one thing is still missing: a fragment of the Star itself. A meteor shard fell near the place you woke. Take it, and the Star Key is forged. Then walk into the crater and <b>end Malveth</b>. Serah: "Whatever stands up in that crater — it will not be a herald. It will be him."`,
       objectives: [
         { text:'Recover the Meteor Shard in the Whisperwood', prog:()=>[F('starKey')?1:0,1] },
-        { text:'Destroy <b>MELBU FRAHMA</b> in the Star Crater', prog:()=>[F('melbuDead')?1:0,1] },
+        { text:'Destroy <b>MALVETH</b> in the Star Crater', prog:()=>[F('malvethDead')?1:0,1] },
       ],
       rewards:{ xp:500, gold:500, item:'unique' },
       doneBeat:'The Star gutters like a candle. It is finished.',
       objects:[
         { when:()=>true, zone:'forest', id:'meteor', x:12, z:14, col:0xff6a3a, label:'Recover the Meteor Shard', kind:'pickup',
-          onUse:()=>{ Fset('starKey'); World.removeInteract('meteor'); AudioSys.play('dragoon');
+          onUse:()=>{ Fset('starKey'); World.removeInteract('meteor'); AudioSys.play('ascend');
             toast('🔑 <b>The Star Key is forged</b> — the crater portal in the Grotto is open!'); } },
       ] },
   ];
@@ -122,7 +122,7 @@ const Main = (() => {
       prog:()=>[Math.min(6,Fget('itemsFound')),6],
       rewards:{ gold:80, potions:2 } },
     { id:'s3', title:'Echoes of the Storm',
-      text:'With the Star destroyed, a forbidden path opens: Stormpeak Ascent, where the tempest is said to be alive. Attune the three Storm Sigils along the climb, then face whatever answers at the summit shrine. (Portal in the northeast Whisperwood — open only to the slayer of Melbu.)',
+      text:'With the Star destroyed, a forbidden path opens: Stormpeak Ascent, where the tempest is said to be alive. Attune the three Storm Sigils along the climb, then face whatever answers at the summit shrine. (Portal in the northeast Whisperwood — open only to the slayer of Malveth.)',
       prog:()=>[Math.min(3,Fget('sigils')) + (F('stormcallerDead')?1:0), 4],
       rewards:{ xp:800, gold:600, item:'unique' } },
   ];
@@ -355,26 +355,26 @@ const Main = (() => {
       role:'Safe haven. Shops, the bounty board, Elder Maera, and the hub waystone.',
       open:()=>true },
     { id:'forest', name:'Whisperwood', icon:'🌲', lvl:'1–6',
-      role:'Where Act I begins: the ruined shrine, the trial crystals, Melbu\'s Herald.',
+      role:'Where Act I begins: the ruined shrine, the trial crystals, Malveth\'s Herald.',
       open:()=>true, via:'The west road out of Mirewood Hollow, past the waystone.' },
     { id:'coast', name:'Emberstrand Coast', icon:'🌊', lvl:'4–9',
       role:'A side road off the Whisperwood. Kael the Lancer is found out here.',
       open:()=>true, via:'East portal in the Whisperwood.' },
     { id:'grotto', name:'The Sunken Grotto', icon:'💎', lvl:'7–12',
       role:'Beneath the shrine. The Drowned Relics, and the Tyrant that guards them.',
-      open:()=>F('heraldDead'), why:'Destroy Melbu\'s Herald at the Whisperwood shrine.',
+      open:()=>F('heraldDead'), why:'Destroy Malveth\'s Herald at the Whisperwood shrine.',
       via:'Southwest portal in the Whisperwood.' },
     { id:'dungeon', name:'The Hollow Deep', icon:'⛓', lvl:'9–14',
       role:'Prison levels below the Grotto. The Warden of Chains — and Lyra\'s cell.',
       open:()=>F('enteredGrotto'), why:'Reach the Sunken Grotto first.',
       via:'Northeast portal in the Sunken Grotto.' },
     { id:'crater', name:'The Star Crater', icon:'☄', lvl:'12–16',
-      role:'Where the Star fell. Act I ends here, against MELBU FRAHMA.',
+      role:'Where the Star fell. Act I ends here, against MALVETH.',
       open:()=>F('starKey'), why:'Forge the Star Key — Herald, Tyrant, and the Meteor Shard.',
       via:'Southwest portal in the Sunken Grotto.' },
     { id:'peaks', name:'Stormpeak Ascent', icon:'⛈', lvl:'16+',
       role:'The endgame climb. Three Storm Sigils, then the Stormcaller at the summit.',
-      open:()=>F('melbuDead'), why:'Destroy Melbu Frahma in the Star Crater.',
+      open:()=>F('malvethDead'), why:'Destroy Malveth in the Star Crater.',
       via:'Northeast portal in the Whisperwood.' },
   ];
   const zoneInfo = id => ZONE_GUIDE.find(z => z.id === id);
@@ -402,7 +402,7 @@ const Main = (() => {
     if (q.id === 'q3') {
       if (Fget('anchorsDestroyed') < 3)
         return { zone:'forest', idPrefix:'anchor', label:'Destroy a Shadow Anchor at the shrine' };
-      return { zone:'forest', x:0, z:-10, label:"Melbu's Herald at the shrine" };
+      return { zone:'forest', x:0, z:-10, label:"Malveth's Herald at the shrine" };
     }
     if (q.id === 'q4') {
       if (!F('enteredGrotto')) return { zone:'grotto', label:'Descend into the Sunken Grotto' };
@@ -410,7 +410,7 @@ const Main = (() => {
     }
     if (q.id === 'q5') return { zone:'grotto', x:0, z:-30, label:'The Tyrant of the Deep' };
     if (q.id === 'q6') return F('starKey')
-      ? { zone:'crater', x:0, z:-6, label:'MELBU FRAHMA in the Star Crater' }
+      ? { zone:'crater', x:0, z:-6, label:'MALVETH in the Star Crater' }
       : { zone:'forest', id:'meteor', label:'Recover the Meteor Shard' };
     return null;
   }
@@ -509,8 +509,8 @@ const Main = (() => {
         <div class="${a>=b?'q-done':''}">· Progress <span class="q-prog">${a}/${b}</span></div></div>`;
     }
     html += `<div class="ql-act">THE ROAD AHEAD</div>
-      <div class="ql-quest locked"><h4>ACT II — The Wingly Empire</h4><p class="ql-story">With the Star destroyed, the sky-roads open. Serah's people are not what they told the humans they were. (In development.)</p></div>
-      <div class="ql-quest locked"><h4>ACT III — The Sea of Ash</h4><p class="ql-story">The Emperor's fleets burn the coast. Dragoons are being hunted for their Spirits. (In development.)</p></div>
+      <div class="ql-quest locked"><h4>ACT II — The Sylvani Empire</h4><p class="ql-story">With the Star destroyed, the sky-roads open. Serah's people are not what they told the humans they were. (In development.)</p></div>
+      <div class="ql-quest locked"><h4>ACT III — The Sea of Ash</h4><p class="ql-story">The Emperor's fleets burn the coast. Starforgeds are being hunted for their Spirits. (In development.)</p></div>
       <div class="ql-quest locked"><h4>ACT IV — The Moon That Never Sets</h4><p class="ql-story">What called the Star down is still up there. It knows your name now. (In development.)</p></div>`;
     wrap.innerHTML = html;
   }
@@ -530,7 +530,7 @@ const Main = (() => {
       ui('mp-text').textContent = `${Math.floor(p.mp)} / ${p.maxMp}`;
       ui('xp-fill').style.width = (p.xp/p.xpNext*100) + '%';
       ui('level-text').textContent = 'Lv ' + p.level;
-      ui('sp-fill').style.width = (p.dragoonForm ? 100 : p.spirit) + '%';
+      ui('sp-fill').style.width = (p.ascended ? 100 : p.spirit) + '%';
       ui('gold-amt').textContent = p.gold;
       buildHotbar();
     },
@@ -575,14 +575,14 @@ const Main = (() => {
       AudioSys.play('victory');
       ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
     },
-    actComplete() { // Melbu down — ACT I COMPLETE
+    actComplete() { // Malveth down — ACT I COMPLETE
       ui('results-title').textContent = '🌟 ACT I COMPLETE 🌟';
       ui('results-title').classList.remove('defeat');
       ui('results-body').innerHTML =
         `<div style="font-size:18px;letter-spacing:3px;color:var(--gold-hi)">THE FALLEN STAR</div>
-         <div style="margin:10px 0">Melbu Frahma's avatar shatters into burning rain. The crater cools. The forest breathes.</div>
+         <div style="margin:10px 0">Malveth's avatar shatters into burning rain. The crater cools. The forest breathes.</div>
          <div style="color:var(--gold-hi)">Level ${RPG.player.level} ${RPG.player.name} · ${RPG.player.kills} kills · ${RPG.player.gold} gold</div>
-         <div style="color:var(--dim);font-size:13px;margin-top:10px">ACT II — <i>The Wingly Empire</i> — is in development.<br>The world stays open: elites, loot and the trial crystals remain.</div>`;
+         <div style="color:var(--dim);font-size:13px;margin-top:10px">ACT II — <i>The Sylvani Empire</i> — is in development.<br>The world stays open: elites, loot and the trial crystals remain.</div>`;
       ui('results-screen').classList.remove('hidden');
       AudioSys.play('victory');
       ui('btn-results-ok').onclick = () => { ui('results-screen').classList.add('hidden'); toWorld(); };
@@ -695,7 +695,7 @@ const Main = (() => {
         node.innerHTML = `${s.icon}<span class="rank">${rank}/${s.max}</span>`;
         node.onmouseenter = e => {
           tip.innerHTML = `<h4>${s.icon} ${s.name}</h4>
-            <div class="tt-cost">${s.mp>0? s.mp+' MP · ':''}${s.type.toUpperCase()}${s.req? ` · requires level ${s.req}`:''}${s.dragoonOnly?' · <span style="color:#cc88ff">DRAGOON FORM</span>':''}</div>
+            <div class="tt-cost">${s.mp>0? s.mp+' MP · ':''}${s.type.toUpperCase()}${s.req? ` · requires level ${s.req}`:''}${s.ascendOnly?' · <span style="color:#cc88ff">STARFORGED FORM</span>':''}</div>
             <div>${s.desc}</div>
             <div class="tt-cost" style="margin-top:6px">${rank>0? `Rank ${rank}/${s.max}`:'Not learned'}${rank<s.max && met && p.skillPoints>0 ? ' — click to learn' : ''}</div>`;
           tip.classList.remove('hidden');
@@ -896,7 +896,7 @@ const Main = (() => {
       buy: () => { RPG.player.potions[kind]++; } };
   }
   function spiritRow(price) {
-    return { icon:'💜', name:'Spirit Draught', desc:'+25% Dragoon Spirit instantly', price,
+    return { icon:'💜', name:'Spirit Draught', desc:'+25% Starheart instantly', price,
       buy: () => { RPG.player.spirit = Math.min(100, RPG.player.spirit + 25); } };
   }
   function gearRow(rarity, slot=null) {
@@ -994,6 +994,8 @@ const Main = (() => {
     const m = ui(id);
     const showing = !m.classList.contains('hidden');
     const want = show !== undefined ? show : !showing;
+    // opening a panel takes focus off the canvas; anything still held would latch on
+    if (want && World.releaseKeys) World.releaseKeys();
     if (want) {
       if (id === 'char-sheet') renderCharSheet();
       if (id === 'skill-tree') renderSkillTree();
@@ -1080,6 +1082,7 @@ const Main = (() => {
     World.onEncounter = (enemy) => {
       if (state !== 'world') return;
       state = 'battle';
+      if (World.releaseKeys) World.releaseKeys();
       Battle.start(enemy);
     };
     ui('intro-screen').classList.add('hidden');
@@ -1098,6 +1101,19 @@ const Main = (() => {
 
   // pause
   ui('btn-resume').onclick = () => { ui('pause-menu').classList.add('hidden'); state = 'world'; };
+  function refreshQualityButtons() {
+    document.querySelectorAll('.qual-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.q === World.quality));
+  }
+  document.querySelectorAll('.qual-btn').forEach(b => {
+    b.onclick = () => {
+      AudioSys.play('click');
+      World.setQuality(b.dataset.q, true);
+      World.travelTo(World.zone, false);   // density changes need the zone rebuilt
+      refreshQualityButtons();
+      toast(`Graphics set to <b>${b.dataset.q}</b>.`);
+    };
+  });
   ui('btn-save').onclick = () => { toast(RPG.save() ? 'Game saved ✓' : 'Save failed'); };
   ui('btn-quit').onclick = () => location.reload();
 
@@ -1129,6 +1145,8 @@ const Main = (() => {
         const p = ui('pause-menu');
         const show = p.classList.contains('hidden');
         p.classList.toggle('hidden');
+        if (show) refreshQualityButtons();
+        if (World.releaseKeys) World.releaseKeys();
         state = show ? 'paused' : 'world';
       }
     }

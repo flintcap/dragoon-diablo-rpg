@@ -1,23 +1,23 @@
-/* rpg.js — Diablo II-style systems: classes, attributes, skills, items, affixes, inventory */
+/* rpg.js — ARPG systems: classes, attributes, skills, items, affixes, inventory */
 const RPG = (() => {
 
   // ---------- CLASSES ----------
   const CLASSES = {
     knight: {
-      name: 'Dragoon Knight', color: 0xff8833, portrait: 'knight',
+      name: 'Starforged Knight', color: 0xff8833, portrait: 'knight',
       base: { str: 16, dex: 11, vit: 14, ene: 8 },
       growth: { str: 3, dex: 1.5, vit: 2.5, ene: 1 },
       weapon: 'Sword', additionCount: 4,
       branches: {
-        blade:  { name: 'Blade of the Dragoon', icon: '⚔', skills: [
+        blade:  { name: 'Blade of the Starforged', icon: '⚔', skills: [
           { id:'double_slash', name:'Double Slash', icon:'⚔', max:5, mp:6,  req:0,  desc:'Slash twice. 120% + 15%/rank weapon damage.', type:'phys', mult:1.2, per:.15 },
           { id:'burning_rush', name:'Burning Rush', icon:'🔥', max:5, mp:12, req:5, desc:'Flaming charge. 180% + 20%/rank fire damage.', type:'fire', mult:1.8, per:.2 },
           { id:'moon_strike', name:'Moon Strike', icon:'🌙', max:5, mp:20, req:12, desc:'Arc of lunar steel. 260% + 25%/rank, always crits.', type:'phys', mult:2.6, per:.25, alwaysCrit:true },
         ]},
         dragon: { name: 'Dragon Spirit', icon: '🐉', skills: [
           { id:'dragon_roar', name:'Dragon Roar', icon:'🐉', max:5, mp:8,  req:0,  desc:'Terrify enemy: -20% + 5%/rank enemy damage for 3 turns.', type:'debuff', mult:0, per:.05 },
-          { id:'wings_of_fire', name:'Wings of Fire', icon:'🦅', max:5, mp:16, req:6, desc:'Dragoon dive attack. 220% + 30%/rank. +50% in Dragoon form.', type:'fire', mult:2.2, per:.3, dragoonBoost:1.5 },
-          { id:'red_eye_burst', name:'Red-Eye Burst', icon:'👁', max:3, mp:30, req:14, desc:'The Red-Eye Dragon awakens. 400% + 50%/rank. Dragoon form only.', type:'fire', mult:4.0, per:.5, dragoonOnly:true },
+          { id:'wings_of_fire', name:'Wings of Fire', icon:'🦅', max:5, mp:16, req:6, desc:'Starforged dive attack. 220% + 30%/rank. +50% in Starforged form.', type:'fire', mult:2.2, per:.3, ascendBoost:1.5 },
+          { id:'emberwyrm_burst', name:'Emberwyrm Burst', icon:'👁', max:3, mp:30, req:14, desc:'The Emberwyrm awakens. 400% + 50%/rank. Starforged form only.', type:'fire', mult:4.0, per:.5, ascendOnly:true },
         ]},
         guard:  { name: 'Indomitable', icon: '🛡', skills: [
           { id:'iron_skin', name:'Iron Skin', icon:'🛡', max:5, mp:0, req:0,  desc:'Passive: +8% defense per rank.', type:'passive', stat:'defPct', per:.08 },
@@ -40,7 +40,7 @@ const RPG = (() => {
         storm:  { name: 'Tempest Steps', icon: '⚡', skills: [
           { id:'shock_cut', name:'Shock Cut', icon:'⚡', max:5, mp:9,  req:0,  desc:'Lightning-imbued cut. 150% + 20%/rank lightning damage.', type:'lightning', mult:1.5, per:.2 },
           { id:'blur', name:'Blur', icon:'💨', max:5, mp:13, req:6, desc:'+15% dodge per rank for 3 turns.', type:'buff', stat:'dodge', per:.15, turns:3 },
-          { id:'thunder_god', name:'Thunder God Dance', icon:'🌩', max:3, mp:28, req:14, desc:'Blue Dragoon spirit. 380% + 45%/rank lightning. Dragoon form only.', type:'lightning', mult:3.8, per:.45, dragoonOnly:true },
+          { id:'thunder_god', name:'Thunder God Dance', icon:'🌩', max:3, mp:28, req:14, desc:'The azure Starheart answers. 380% + 45%/rank lightning. Starforged form only.', type:'lightning', mult:3.8, per:.45, ascendOnly:true },
         ]},
         trick:  { name: 'Dirty Tricks', icon: '🃏', skills: [
           { id:'lucky_strike', name:'Lucky Strike', icon:'🍀', max:5, mp:0, req:0, desc:'Passive: +5% crit chance and +8% gold per rank.', type:'passive', stat:'critGold', per:.05 },
@@ -63,7 +63,7 @@ const RPG = (() => {
         frost:  { name: 'Frost', icon: '❄', skills: [
           { id:'ice_shard', name:'Ice Shard', icon:'❄', max:5, mp:6,  req:0,  desc:'Piercing shard. 140% + 20%/rank, slows enemy.', type:'ice', mult:1.4, per:.2, slow:true },
           { id:'frozen_armor', name:'Frozen Armor', icon:'🧊', max:5, mp:12, req:6, desc:'+20% defense per rank for 3 turns.', type:'buff', stat:'defPct', per:.2, turns:3 },
-          { id:'blizzard', name:'Blizzard', icon:'🌨', max:3, mp:30, req:14, desc:'Violet Dragoon storm. 420% + 55%/rank ice. Dragoon form only.', type:'ice', mult:4.2, per:.55, dragoonOnly:true },
+          { id:'blizzard', name:'Blizzard', icon:'🌨', max:3, mp:30, req:14, desc:'The violet Starheart answers. 420% + 55%/rank ice. Starforged form only.', type:'ice', mult:4.2, per:.55, ascendOnly:true },
         ]},
         arcane: { name: 'Arcane', icon: '✦', skills: [
           { id:'mana_font', name:'Mana Font', icon:'💧', max:5, mp:0, req:0, desc:'Passive: +15% max MP and +10% spell power per rank.', type:'passive', stat:'mpPct', per:.15 },
@@ -78,7 +78,7 @@ const RPG = (() => {
   const BASES = {
     weapon: [
       { name:'Sword', icon:'🗡', dmg:[6,12], cls:'knight' }, { name:'Broadsword', icon:'⚔', dmg:[10,18], cls:'knight' },
-      { name:'Dragoon Lance', icon:'🔱', dmg:[16,28], cls:'knight' },
+      { name:'Starforged Lance', icon:'🔱', dmg:[16,28], cls:'knight' },
       { name:'Dagger', icon:'🔪', dmg:[5,10], cls:'rogue' }, { name:'Kris', icon:'🗡', dmg:[9,15], cls:'rogue' },
       { name:'Shadow Fang', icon:'⚔', dmg:[14,24], cls:'rogue' },
       { name:'Staff', icon:'🪄', dmg:[4,9], cls:'sorceress' }, { name:'Orb Staff', icon:'🔮', dmg:[8,14], cls:'sorceress' },
@@ -87,11 +87,11 @@ const RPG = (() => {
     armor: [
       { name:'Cloth Garb', icon:'🥋', def:4 }, { name:'Leather Armor', icon:'🦺', def:8 },
       { name:'Chain Mail', icon:'⛓', def:14 }, { name:'Plate Armor', icon:'🛡', def:20 },
-      { name:'Dragoon Mail', icon:'🐲', def:28 },
+      { name:'Starforged Mail', icon:'🐲', def:28 },
     ],
     helm: [
       { name:'Cap', icon:'🧢', def:2 }, { name:'Helm', icon:'🪖', def:5 },
-      { name:'Great Helm', icon:'⛑', def:9 }, { name:'Dragoon Helm', icon:'👑', def:14 },
+      { name:'Great Helm', icon:'⛑', def:9 }, { name:'Starforged Helm', icon:'👑', def:14 },
     ],
     boots: [
       { name:'Boots', icon:'🥾', def:2 }, { name:'Greaves', icon:'🦿', def:5 }, { name:'Winged Boots', icon:'👢', def:9 },
@@ -120,11 +120,11 @@ const RPG = (() => {
     { name:'of the Duelist', stat:'addDmg', v:[.06,.2], rar:3 },
   ];
   const UNIQUES = [
-    { name:'Soul of the Red-Eye', slot:'weapon', dmg:[30,45], affixes:[{stat:'dmgPct',v:.4},{stat:'fireDmg',v:20},{stat:'lifeLeech',v:.06}] },
-    { name:'Azure Dragoon Spirit', slot:'amulet', affixes:[{stat:'ltnDmg',v:18},{stat:'mpFlat',v:40},{stat:'spdPct',v:.12}] },
-    { name:'Melbu Frahma\'s Crown', slot:'helm', def:18, affixes:[{stat:'allAttr',v:5},{stat:'hpPct',v:.2}] },
+    { name:'Soul of the Emberwyrm', slot:'weapon', dmg:[30,45], affixes:[{stat:'dmgPct',v:.4},{stat:'fireDmg',v:20},{stat:'lifeLeech',v:.06}] },
+    { name:'Azure Starheart', slot:'amulet', affixes:[{stat:'ltnDmg',v:18},{stat:'mpFlat',v:40},{stat:'spdPct',v:.12}] },
+    { name:'Malveth\'s Crown', slot:'helm', def:18, affixes:[{stat:'allAttr',v:5},{stat:'hpPct',v:.2}] },
     { name:'Emperor\'s Plate', slot:'armor', def:34, affixes:[{stat:'defPct',v:.25},{stat:'hpFlat',v:60}] },
-    { name:'Wingly Tears', slot:'ring', affixes:[{stat:'magicFind',v:.4},{stat:'eneFlat',v:10},{stat:'critPct',v:.08}] },
+    { name:'Sylvani Tears', slot:'ring', affixes:[{stat:'magicFind',v:.4},{stat:'eneFlat',v:10},{stat:'critPct',v:.08}] },
     { name:'Stormcaller\'s Ward', slot:'armor', def:30, affixes:[{stat:'resLightning',v:.5},{stat:'resIce',v:.25},{stat:'hpFlat',v:45}] },
     { name:'Coreheart Signet', slot:'ring', affixes:[{stat:'resFire',v:.4},{stat:'resArcane',v:.2},{stat:'fireDmg',v:14}] },
     { name:'The Sixth Beat', slot:'amulet', affixes:[{stat:'addDmg',v:.35},{stat:'dexFlat',v:8},{stat:'spdPct',v:.1}] },
@@ -148,7 +148,7 @@ const RPG = (() => {
       attr: { ...c.base }, attrPoints: 0, skillPoints: 1,
       skills: {}, gold: 50, potions: { hp: 3, mp: 2 },
       equip: { weapon:null, armor:null, helm:null, boots:null, amulet:null, ring1:null, ring2:null, charm:null },
-      inventory: [], spirit: 0, dragoonForm: false,
+      inventory: [], spirit: 0, ascended: false,
       additions: {}, addition: Combat.additionsFor(clsKey)[0].id,
       buffs: {}, cheatDeathUsed: false, kills: 0,
       serah: { hp: 0, mp: 0, weapon: null },
@@ -232,8 +232,8 @@ const RPG = (() => {
   }
 
   const SERAH_SKILLS = [
-    { id:'silver_arrow', name:'Silver Arrow', icon:'🏹', mp:6, req:0, desc:'A streak of Wingly light. 180% damage.', type:'phys', mult:1.8 },
-    { id:'wingly_light', name:'Wingly Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
+    { id:'silver_arrow', name:'Silver Arrow', icon:'🏹', mp:6, req:0, desc:'A streak of Sylvani light. 180% damage.', type:'phys', mult:1.8 },
+    { id:'sylvan_light', name:'Sylvan Light', icon:'💫', mp:10, req:0, desc:'Heal the party leader for 32% of max HP.', type:'heal', mult:.32 },
     { id:'tailwind', name:'Tailwind', icon:'🌬', mp:8, req:4, desc:'+18% dodge for the whole party, 3 turns.', type:'buff', mult:.18 },
     { id:'starfall_shot', name:'Starfall Shot', icon:'☄', mp:18, req:8, desc:'Her deadliest arrow. 330% damage, high crit chance.', type:'phys', mult:3.3, critBonus:.25 },
   ];
@@ -443,6 +443,10 @@ const RPG = (() => {
       if (!player.serah) player.serah = { hp: 0, mp: 0, weapon: null };
       if (!player.additions) player.additions = {};
       if (!player.addition) player.addition = Combat.additionsFor(player.cls)[0].id;
+      // saves written before the rename carry the old keys
+      if (player.dragoonForm !== undefined) { player.ascended = player.dragoonForm; delete player.dragoonForm; }
+      const f = player.flags;
+      if (f && f.melbuDead !== undefined) { f.malvethDead = f.melbuDead; delete f.melbuDead; }
       recalc(); return true;
     } catch(e){ return false; }
   }

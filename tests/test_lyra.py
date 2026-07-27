@@ -110,7 +110,7 @@ async def main():
         await page.evaluate("() => { const p = RPG.player; p.attr.str = 20; p.attr.vit = 300; RPG.recalc(); p.hp = p.maxHp; }")
         await start_battle(page)
         cyc = []
-        for name in ['DRAGOON KNIGHT', 'SERAH', 'KAEL', 'LYRA']:
+        for name in ['STARFORGED KNIGHT', 'SERAH', 'KAEL', 'LYRA']:
             ok = await skip_to_actor(page, name)
             cyc.append(f'{name}:{ok}')
             if not ok: break

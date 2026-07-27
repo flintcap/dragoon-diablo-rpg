@@ -1,7 +1,7 @@
 import asyncio
 from playwright.async_api import async_playwright
 
-# Gameplay test: learn skill → use it → win battle → loot/xp → dragoon → back to world.
+# Gameplay test: learn skill → use it → win battle → loot/xp → ascend → back to world.
 URL = 'http://localhost:8123/index.html'
 OUT = 'shots'
 
@@ -35,10 +35,10 @@ async def main():
         if await sub.count() > 1:
             await sub.first.click(); await page.wait_for_timeout(2000)
 
-        btn = page.locator('#battle-menu .battle-btn[data-action="dragoon"]')
+        btn = page.locator('#battle-menu .battle-btn[data-action="ascend"]')
         if await btn.is_visible() and not await btn.is_disabled():
             await btn.click(); await page.wait_for_timeout(2200)
-            await page.screenshot(path=f'{OUT}/14_dragoon.png')
+            await page.screenshot(path=f'{OUT}/14_ascend.png')
 
         for _ in range(6):
             if not await page.locator('#battle-menu').is_visible(): break

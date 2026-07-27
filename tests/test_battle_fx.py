@@ -58,25 +58,25 @@ async def main():
         await page.keyboard.press('Space'); await page.wait_for_timeout(2200)
         print('addition chain done, no errors so far:', len(errors) == 0)
 
-        # 2. Dragoon cinematic — poll until the player's menu is actually up
+        # 2. Starforged cinematic — poll until the player's menu is actually up
         got_menu = False
         for _ in range(30):
             ind = await page.evaluate("() => document.getElementById('turn-indicator').innerText")
             vis = await page.evaluate("() => !document.getElementById('battle-menu').classList.contains('hidden')")
-            if 'DRAGOON KNIGHT' in ind and vis:
+            if 'STARFORGED KNIGHT' in ind and vis:
                 got_menu = True; break
             st = await page.evaluate("() => Main.state")
             if st != 'battle': break
             if vis: await attack_round(page)
             else: await page.wait_for_timeout(700)
-        print('player menu for dragoon:', got_menu)
-        await page.click('#battle-menu .battle-btn >> nth=3', timeout=8000)  # Dragoon
+        print('player menu for ascend:', got_menu)
+        await page.click('#battle-menu .battle-btn >> nth=3', timeout=8000)  # Starforged
         await page.wait_for_timeout(1000)
-        await page.screenshot(path=f'{OUT}/81_dragoon_cinematic.png')
+        await page.screenshot(path=f'{OUT}/81_ascend_cinematic.png')
         await page.wait_for_timeout(2500)
-        form = await page.evaluate("() => RPG.player.dragoonForm")
-        print('dragoon form active:', form)
-        await page.screenshot(path=f'{OUT}/82_dragoon_wings.png')
+        form = await page.evaluate("() => RPG.player.ascended")
+        print('ascend form active:', form)
+        await page.screenshot(path=f'{OUT}/82_ascend_wings.png')
 
         # 3. finish the wolf — catch the death anim + results
         await page.evaluate("() => { World.enemies.forEach(e => { e.hpCur = 1; }); }")
@@ -95,7 +95,7 @@ async def main():
                 break
         print('wolf slain + results shown:', dead)
 
-        # 4. dragoon cinematic leaves no orphan objects/pillars behind
+        # 4. ascend cinematic leaves no orphan objects/pillars behind
         leftovers = await page.evaluate("""() => {
           let n = 0;
           Battle.scene && Battle.scene.traverse(o => { if (o.geometry && o.geometry.type === 'CylinderGeometry' && o.material && o.material.blending === 2) n++; });
